@@ -1,0 +1,163 @@
+[
+  {
+    "description": "Minimal IQ-TREE based configuration for two taxa",
+    "seed": 123,
+    "parallel_cores": 2,
+    "tree": {
+      "taxa_labels": ["A", "B"],
+      "branch_length_range": [0.1, 1.0],
+      "branch_length_distribution": "uniform",
+      "rooted": true,
+      "topologies": ["(A,:B)"]
+    },
+    "sequence": {
+      "length": 1000,
+      "model": "JC"
+    },
+    "simulation": {
+      "backend": "iqtree",
+      "iqtree_path": "/absolute/path/to/iqtree3",
+      "seqgen_path": "/absolute/path/to/seq-gen",
+      "seqgen_kwargs": {},
+      "indel": {
+        "enabled": false,
+        "rates": [0.1, 0.1]
+      }
+    },
+    "dataset": {
+      "tree_count": 100,
+      "output_name": "generated_trees"
+    }
+  },
+  {
+    "description": "Seq-Gen example with custom HKY parameters",
+    "seed": 31415,
+    "parallel_cores": 2,
+    "tree": {
+      "taxa_labels": ["taxon_1", "taxon_2"],
+      "branch_length_range": [0.05, 0.5],
+      "branch_length_distribution": "uniform",
+      "rooted": true,
+      "topologies": ["(taxon_1,:taxon_2)"]
+    },
+    "sequence": {
+      "length": 500,
+      "model": "HKY"
+    },
+    "simulation": {
+      "backend": "seqgen",
+      "iqtree_path": null,
+      "seqgen_path": "/absolute/path/to/seq-gen",
+      "seqgen_kwargs": {
+        "ts_tv_ratio": 2.0,
+        "frequencies": [0.25, 0.25, 0.25, 0.25],
+        "additional_args": ["-k1"]
+      },
+      "indel": {
+        "enabled": false,
+        "rates": null
+      }
+    },
+    "dataset": {
+      "tree_count": 50,
+      "output_name": "seqgen_dataset"
+    }
+  },
+  {
+    "description": "Three-taxa configuration with indels enabled (gap channel recorded)",
+    "seed": 98765,
+    "parallel_cores": 2,
+    "tree": {
+      "taxa_labels": ["A", "B", "C"],
+      "branch_length_range": [0.1, 0.9],
+      "branch_length_distribution": "uniform",
+      "rooted": true,
+      "topologies": ["((A,B),:C)", "((A,C),:B)"]
+    },
+    "sequence": {
+      "length": 750,
+      "model": "JC"
+    },
+    "simulation": {
+      "backend": "iqtree",
+      "iqtree_path": "/absolute/path/to/iqtree3",
+      "seqgen_path": "/absolute/path/to/seq-gen",
+      "seqgen_kwargs": {},
+      "indel": {
+        "enabled": true,
+        "rates": [0.05, 0.05]
+      }
+    },
+    "dataset": {
+      "tree_count": 25,
+      "output_name": "three_taxa_example"
+    }
+  },
+  {
+    "description": "Four-taxa configuration with paired cherries",
+    "seed": 24680,
+    "parallel_cores": 4,
+    "tree": {
+      "taxa_labels": ["t1", "t2", "t3", "t4"],
+      "branch_length_range": [0.2, 0.8],
+      "branch_length_distribution": "uniform",
+      "rooted": true,
+      "topologies": ["((t1,t2),:(t3,t4))", "((t1,t3),:(t2,t4))"]
+    },
+    "sequence": {
+      "length": 600,
+      "model": "JC"
+    },
+    "simulation": {
+      "backend": "iqtree",
+      "iqtree_path": "/absolute/path/to/iqtree3",
+      "seqgen_path": "/absolute/path/to/seq-gen",
+      "seqgen_kwargs": {},
+      "indel": {
+        "enabled": false,
+        "rates": [0.05, 0.05]
+      }
+    },
+    "dataset": {
+      "tree_count": 40,
+      "output_name": "four_taxa_example"
+    }
+  },
+  {
+    "description": "Unrooted quartet (Seq-Gen backend)",
+    "seed": 13579,
+    "parallel_cores": 2,
+    "tree": {
+      "taxa_labels": ["p1", "p2", "p3", "p4"],
+      "branch_length_range": [0.15, 0.6],
+      "branch_length_distribution": "uniform",
+      "rooted": false,
+      "topologies": [
+        "((p1,p2),(p3,p4))",
+        "((p1,p3),(p2,p4))",
+        "((p1,p4),(p2,p3))"
+      ]
+    },
+    "sequence": {
+      "length": 800,
+      "model": "HKY"
+    },
+    "simulation": {
+      "backend": "seqgen",
+      "iqtree_path": null,
+      "seqgen_path": "/absolute/path/to/seq-gen",
+      "seqgen_kwargs": {
+        "ts_tv_ratio": 1.5,
+        "frequencies": [0.2, 0.3, 0.3, 0.2]
+      },
+      "indel": {
+        "enabled": false,
+        "rates": null
+      }
+    },
+    "dataset": {
+      "tree_count": 60,
+      "output_name": "unrooted_quartet"
+    }
+  }
+]
