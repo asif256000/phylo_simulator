@@ -1,0 +1,101 @@
+# Phylogenetic Data Simulator
+
+Phylo Simulator generates phylogenetic trees and aligned sequences, writes them to PhyloXML, and converts the results into NumPy-friendly arrays. The repository contains only simulation, XML parsing, and lightweight verification utilities.
+
+## Setup
+
+1. Use Python 3.10+ and create an isolated environment (`venv` or Conda recommended).
+2. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Install an external sequence simulator (required for data generation):
+   - [IQ-TREE](http://www.iqtree.org/)
+   - [Seq-Gen](http://tree.bio.ed.ac.uk/software/seqgen/)
+
+## Configure generation
+
+Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). Key fields:
+
+- `seed`: RNG seed for reproducibility.
+- `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), and a required `topologies` list describing permitted tree structures.
+- `sequence`: sequence length and substitution model.
+- `simulation`: backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
+- `dataset`: number of trees to simulate (`tree_count`) and the output file basename (`output_name`, no extension). Files are written to `xml_data/<output_name>.xml` and `npy_data/<output_name>.npy` automatically.
+- `parallel_cores`: controls the level of multiprocessing/threading used during tree generation and dataset encoding. Set to `1` to disable parallelism when debugging.
+
+### Topology strings
+
+Provide one or more entries under `tree.topologies` for every configuration. Each entry must be written as a binary Newick fragment. When `tree.rooted` is `true`, wrap the two root children in parentheses and prefix exactly one child with `:` to mark the edge that carries the root—for instance, `((A,B),:C)` separates the `(A,B)` cherry from the rooted leaf `C`, and `(A,:(B,(C,D)))` represents `A` opposite a subtree where `B` splits before the cherry `(C,D)`. When `tree.rooted` is `false`, omit `:` entirely and use standard Newick notation such as `((p1,p2),(p3,p4))`. Inside each child, only single taxa or cherries like `(taxon_1,taxon_2)` are permitted, and every topology must reference each configured taxon exactly once. The generator cycles through the supplied strings to keep datasets evenly distributed, and the literal topology (including any root marker) is stored as a `<topology>` metadata entry.
+
+### Branch lengths
+
+Regardless of the requested rootedness, the generator first treats every topology as unrooted and draws independent branch segments from the configured range. These segments cover all edges of the unrooted skeleton. When the configuration is rooted, the segment that would connect the two root-side groups is randomly split into two values—one for each child of the root—by drawing a pivot between the lower bound of the branch range and the sampled segment length. The two new edges therefore sum to the original unrooted branch, while downstream branches keep their original samples. For unrooted two-taxon datasets, only a single segment is emitted and it is attached to the first taxon mentioned in the topology, leaving the companion tip with an implicit zero-length edge. All other unrooted trees retain the sampled lengths directly.
+
+## Generate trees and sequences (PhyloXML)
+
+```bash
+python -m src.data_generation --config path/to/your/config.yaml
+```
+
+For example, using the sample configuration:
+
+```bash
+python -m src.data_generation --config config/generation.yaml
+```
+
+This writes `xml_data/<output_name>.xml` containing the simulated phylogenies and sequences.
+
+## Optional: verify Newick dumps
+
+```bash
+python -m src.data_generation.verify --config path/to/your/config.yaml
+```
+
+This emits `xml_verify/<output_name>.txt` with one Newick tree per line for quick inspection.
+
+Programmatic use is also available:
+
+```python
+from src.data_generation import verify_from_config
+
+verify_from_config("path/to/your/config.yaml")
+```
+
+Each invocation overwrites the corresponding `xml_verify/<output_name>.txt` file with one Newick tree per line.
+
+## Parse PhyloXML to NumPy
+
+```bash
+python -m src.xml_parser --config path/to/your/config.yaml
+```
+
+The parser writes `npy_data/<output_name>.npy` with fields:
+
+- `X`: one-hot encoded sequences shaped `[taxa, length, channels]` (gap channel added when indels enabled).
+- `y_br`: branch lengths ordered deterministically for 2–4 taxa (or canonical ordering for larger cases).
+- `branch_mask`: boolean mask for present branches.
+- `y_top`: one-hot topology indicator.
+- `tree_index`: original index from the XML file.
+
+### Branch representation for NumPy matrices
+
+The parser supports specialized branch vector formats for 2-, 3-, and 4-taxa trees. For these cases, the branch vector `y_br` has length equal to `2 × (2n - 3)` (the number of branches in the unrooted tree times two), with deterministic slot assignments:
+
+- **2-taxa**: `[a, b]`
+- **3-taxa**: `[a1, a2, b1, b2, c1, c2]`
+- **4-taxa**: `[a1, a2, b1, b2, c1, c2, d1, d2, i1, i2]`
+
+In each case, the `*1` slots correspond to the standard leaf branches (always present), while the `*2` slots hold zero by default. When a tree is rooted on a particular branch, that branch is split into two segments that populate both the `*1` and `*2` slots for the corresponding taxon or internal branch. This ensures consistent ordering regardless of root placement.
+
+## Testing
+
+Run the test suite:
+
+```bash
+pytest
+```
+
+Tests cover tree/sequence generation workflows, XML parsing, dataset encoding, and one-hot encoding utilities.
