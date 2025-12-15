@@ -1,0 +1,17 @@
+**.xml
+**.npy
+**.png
+**.out
+xml_verify/
+xml_data/
+npy_data/
+branch_plots/
+bkp_**
+start.sh
+phylo_*.sh
+.vscode
+.DS_Store
+**/__pycache__/
+AGENT.*
+.venv
+config/
