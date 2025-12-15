@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phylo-rooting"
+version = "0.1.0"
+description = "Phylogenetic tree and sequence simulation with PhyloXML → NumPy conversion"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Asif Iqbal" }]
+dependencies = [
+    "biopython",
+    "numpy",
+    "torch",
+    "pyyaml",
+    "pytest",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
