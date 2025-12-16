@@ -151,7 +151,57 @@ def test_verify_module_emits_newick_dump(monkeypatch: pytest.MonkeyPatch, tmp_pa
     generator.write_xml()
     output_path = verify_from_config(config_path)
 
-    expected_dir = tmp_path / "xml_verify"
+    expected_dir = tmp_path / "xml_data" / "verify"
+    assert output_path == expected_dir / "generated.txt"
+    assert output_path.exists()
+    contents = output_path.read_text().strip().splitlines()
+    assert len(contents) == config.dataset.tree_count
+    assert all(line.endswith(";") for line in contents)
+
+
+def test_verify_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Test that verify module uses custom xml_directory when specified."""
+    custom_xml_dir = str(tmp_path / "my_custom_xml")
+    payload = {
+        "seed": 7,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"]
+        },
+        "sequence": {"length": 6, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 2,
+            "output_name": "generated",
+            "xml_directory": custom_xml_dir,
+        },
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    monkeypatch.setattr(
+        TreeSequenceGenerator,
+        "_simulate_with_iqtree",
+        lambda self, *args, **kwargs: {
+            "A": "A" * config.sequence.length,
+            "B": "C" * config.sequence.length,
+        },
+    )
+
+    generator.write_xml()
+    output_path = verify_from_config(config_path)
+
+    expected_dir = Path(custom_xml_dir) / "verify"
     assert output_path == expected_dir / "generated.txt"
     assert output_path.exists()
     contents = output_path.read_text().strip().splitlines()
@@ -674,3 +724,184 @@ def test_topology_validation_requires_all_taxa(tmp_path: Path) -> None:
     }
     with pytest.raises(ConfigurationError):
         GenerationConfig.from_mapping(payload, base_path=tmp_path)
+
+
+def test_custom_xml_directory(tmp_path: Path) -> None:
+    """Test that custom xml_directory is respected."""
+    custom_xml_dir = str(tmp_path / "custom_xml")
+    payload = {
+        "seed": 42,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 8, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 3,
+            "output_name": "generated",
+            "xml_directory": custom_xml_dir,
+        },
+    }
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    assert config.dataset.xml_directory == custom_xml_dir
+    assert config.dataset.xml_path() == Path(custom_xml_dir) / "generated.xml"
+
+
+def test_custom_npy_directory(tmp_path: Path) -> None:
+    """Test that custom npy_directory is respected."""
+    custom_npy_dir = str(tmp_path / "custom_npy")
+    payload = {
+        "seed": 42,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 8, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 3,
+            "output_name": "generated",
+            "npy_directory": custom_npy_dir,
+        },
+    }
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    assert config.dataset.npy_directory == custom_npy_dir
+    assert config.dataset.output_npy_path() == Path(custom_npy_dir) / "generated.npy"
+
+
+def test_both_custom_directories(tmp_path: Path) -> None:
+    """Test that both custom xml_directory and npy_directory are respected."""
+    custom_xml_dir = str(tmp_path / "custom_xml")
+    custom_npy_dir = str(tmp_path / "custom_npy")
+    payload = {
+        "seed": 42,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 8, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 3,
+            "output_name": "generated",
+            "xml_directory": custom_xml_dir,
+            "npy_directory": custom_npy_dir,
+        },
+    }
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    assert config.dataset.xml_directory == custom_xml_dir
+    assert config.dataset.npy_directory == custom_npy_dir
+    assert config.dataset.xml_path() == Path(custom_xml_dir) / "generated.xml"
+    assert config.dataset.output_npy_path() == Path(custom_npy_dir) / "generated.npy"
+
+
+def test_default_directories_when_not_specified(tmp_path: Path) -> None:
+    """Test that default directories are used when custom directories are not specified."""
+    payload = {
+        "seed": 42,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 8, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 3,
+            "output_name": "generated",
+        },
+    }
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    assert config.dataset.xml_directory is None
+    assert config.dataset.npy_directory is None
+    assert config.dataset.xml_path() == tmp_path / "xml_data" / "generated.xml"
+    assert config.dataset.output_npy_path() == tmp_path / "npy_data" / "generated.npy"
+
+
+def test_empty_xml_directory_raises_error(tmp_path: Path) -> None:
+    """Test that empty xml_directory string raises ConfigurationError."""
+    payload = {
+        "seed": 42,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 8, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 3,
+            "output_name": "generated",
+            "xml_directory": "",
+        },
+    }
+    with pytest.raises(ConfigurationError, match="'dataset.xml_directory' must be a non-empty string"):
+        GenerationConfig.from_mapping(payload, base_path=tmp_path)
+
+
+def test_empty_npy_directory_raises_error(tmp_path: Path) -> None:
+    """Test that empty npy_directory string raises ConfigurationError."""
+    payload = {
+        "seed": 42,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 8, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 3,
+            "output_name": "generated",
+            "npy_directory": "",
+        },
+    }
+    with pytest.raises(ConfigurationError, match="'dataset.npy_directory' must be a non-empty string"):
+        GenerationConfig.from_mapping(payload, base_path=tmp_path)
+
