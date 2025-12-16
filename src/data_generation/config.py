@@ -81,6 +81,8 @@ class DatasetSettings:
     tree_count: int
     output_basename: str
     root_directory: Path
+    xml_directory: Optional[str] = None
+    npy_directory: Optional[str] = None
 
     def ensure_xml_directory(self) -> None:
         self._xml_directory().mkdir(parents=True, exist_ok=True)
@@ -97,9 +99,13 @@ class DatasetSettings:
         return self._xml_directory() / f"{self.output_basename}.xml"
 
     def _xml_directory(self) -> Path:
+        if self.xml_directory:
+            return Path(self.xml_directory)
         return self.root_directory / "xml_data"
 
     def _npy_directory(self) -> Path:
+        if self.npy_directory:
+            return Path(self.npy_directory)
         return self.root_directory / "npy_data"
 
 
@@ -211,10 +217,25 @@ class GenerationConfig:
         if not output_basename:
             raise ConfigurationError("'dataset.output_name' must be a non-empty string")
         root_directory = _resolve_data_root(base_path)
+        
+        xml_directory = dataset_payload.get("xml_directory")
+        if xml_directory is not None:
+            xml_directory = str(xml_directory).strip()
+            if not xml_directory:
+                raise ConfigurationError("'dataset.xml_directory' must be a non-empty string")
+        
+        npy_directory = dataset_payload.get("npy_directory")
+        if npy_directory is not None:
+            npy_directory = str(npy_directory).strip()
+            if not npy_directory:
+                raise ConfigurationError("'dataset.npy_directory' must be a non-empty string")
+        
         dataset_settings = DatasetSettings(
             tree_count=tree_count,
             output_basename=output_basename,
             root_directory=root_directory,
+            xml_directory=xml_directory,
+            npy_directory=npy_directory,
         )
 
         parallel_raw = payload.get("parallel_cores", 1)
