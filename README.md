@@ -23,8 +23,35 @@ Simulation inputs live in YAML or JSON configuration files (templates available 
 - `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), and a required `topologies` list describing permitted tree structures.
 - `sequence`: sequence length and substitution model.
 - `simulation`: backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
-- `dataset`: number of trees to simulate (`tree_count`) and the output file basename (`output_name`, no extension). Files are written to `xml_data/<output_name>.xml` and `npy_data/<output_name>.npy` automatically.
+- `dataset`: number of trees to simulate (`tree_count`) and the output file basename (`output_name`, no extension). By default, files are written to `xml_data/<output_name>.xml` and `npy_data/<output_name>.npy`. Optionally specify custom directories with `xml_directory` and `npy_directory` (see Custom Output Directories below).
 - `parallel_cores`: controls the level of multiprocessing/threading used during tree generation and dataset encoding. Set to `1` to disable parallelism when debugging.
+
+### Custom Output Directories
+
+By default, generated files are saved to `xml_data/` and `npy_data/` directories relative to the configuration file location. You can override these defaults by specifying custom paths in your configuration:
+
+```yaml
+dataset:
+  tree_count: 100
+  output_name: "generated_trees"
+  xml_directory: "/absolute/path/to/xml/output"  # Optional
+  npy_directory: "/absolute/path/to/npy/output"  # Optional
+```
+
+Or in JSON:
+
+```json
+{
+  "dataset": {
+    "tree_count": 100,
+    "output_name": "generated_trees",
+    "xml_directory": "/absolute/path/to/xml/output",
+    "npy_directory": "/absolute/path/to/npy/output"
+  }
+}
+```
+
+When custom directories are specified, all output files (including verify outputs) use those locations. If omitted, the default `xml_data/` and `npy_data/` directories are used.
 
 ### Topology strings
 
@@ -46,7 +73,7 @@ For example, using the sample configuration:
 python -m src.data_generation --config config/generation.yaml
 ```
 
-This writes `xml_data/<output_name>.xml` containing the simulated phylogenies and sequences.
+This writes `xml_data/<output_name>.xml` (or to the custom `xml_directory` if specified) containing the simulated phylogenies and sequences.
 
 ## Optional: verify Newick dumps
 
@@ -54,7 +81,7 @@ This writes `xml_data/<output_name>.xml` containing the simulated phylogenies an
 python -m src.data_generation.verify --config path/to/your/config.yaml
 ```
 
-This emits `xml_verify/<output_name>.txt` with one Newick tree per line for quick inspection.
+This emits `<xml_directory>/verify/<output_name>.txt` (where `<xml_directory>` is either the default `xml_data/` or your custom directory) with one Newick tree per line for quick inspection.
 
 Programmatic use is also available:
 
@@ -64,7 +91,7 @@ from src.data_generation import verify_from_config
 verify_from_config("path/to/your/config.yaml")
 ```
 
-Each invocation overwrites the corresponding `xml_verify/<output_name>.txt` file with one Newick tree per line.
+Each invocation overwrites the corresponding `<xml_directory>/verify/<output_name>.txt` file with one Newick tree per line.
 
 ## Parse PhyloXML to NumPy
 
@@ -72,7 +99,7 @@ Each invocation overwrites the corresponding `xml_verify/<output_name>.txt` file
 python -m src.xml_parser --config path/to/your/config.yaml
 ```
 
-The parser writes `npy_data/<output_name>.npy` with fields:
+The parser writes `npy_data/<output_name>.npy` (or to the custom `npy_directory` if specified) with fields:
 
 - `X`: one-hot encoded sequences shaped `[taxa, length, channels]` (gap channel added when indels enabled).
 - `y_br`: branch lengths ordered deterministically for 2–4 taxa (or canonical ordering for larger cases).
