@@ -32,6 +32,10 @@ simulation:
 dataset:
   tree_count: 100
   output_name: "generated_trees"
+  # Optional: Specify custom directories for XML and NPY output
+  # If not specified, defaults to root_directory/xml_data and root_directory/npy_data
+  # xml_directory: "/path/to/custom/xml/directory"
+  # npy_directory: "/path/to/custom/npy/directory"
 
 ---
 # Seq-Gen example with custom HKY parameters
@@ -68,6 +72,9 @@ simulation:
 dataset:
   tree_count: 50
   output_name: "seqgen_dataset"
+  # Optional: Specify custom directories for XML and NPY output
+  # xml_directory: "/path/to/custom/xml/directory"
+  # npy_directory: "/path/to/custom/npy/directory"
 
 # Three-taxa configuration that enables indels (gap channel recorded in the dataset)
 seed: 98765
@@ -101,6 +108,9 @@ simulation:
 dataset:
   tree_count: 25
   output_name: "three_taxa_example"
+  # Optional: Specify custom directories for XML and NPY output
+  # xml_directory: "/path/to/custom/xml/directory"
+  # npy_directory: "/path/to/custom/npy/directory"
 
 ---
 # Four-taxa configuration with paired cherries on each side of the internal branch

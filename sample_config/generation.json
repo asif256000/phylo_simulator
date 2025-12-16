@@ -26,7 +26,9 @@
     },
     "dataset": {
       "tree_count": 100,
-      "output_name": "generated_trees"
+      "output_name": "generated_trees",
+      "xml_directory": null,
+      "npy_directory": null
     }
   },
   {
@@ -60,7 +62,9 @@
     },
     "dataset": {
       "tree_count": 50,
-      "output_name": "seqgen_dataset"
+      "output_name": "seqgen_dataset",
+      "xml_directory": null,
+      "npy_directory": null
     }
   },
   {
@@ -90,7 +94,9 @@
     },
     "dataset": {
       "tree_count": 25,
-      "output_name": "three_taxa_example"
+      "output_name": "three_taxa_example",
+      "xml_directory": null,
+      "npy_directory": null
     }
   },
   {
@@ -120,7 +126,9 @@
     },
     "dataset": {
       "tree_count": 40,
-      "output_name": "four_taxa_example"
+      "output_name": "four_taxa_example",
+      "xml_directory": null,
+      "npy_directory": null
     }
   },
   {
@@ -157,7 +165,9 @@
     },
     "dataset": {
       "tree_count": 60,
-      "output_name": "unrooted_quartet"
+      "output_name": "unrooted_quartet",
+      "xml_directory": null,
+      "npy_directory": null
     }
   }
 ]
