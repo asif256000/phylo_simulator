@@ -26,8 +26,7 @@ def verify_from_config(config_path: Path | str, *, output_path: Path | None = No
 
 def _default_verify_path(xml_path: Path) -> Path:
     xml_directory = xml_path.parent
-    root_directory = xml_directory.parent if xml_directory.name == "xml_data" else xml_directory
-    verify_directory = root_directory / "xml_verify"
+    verify_directory = xml_directory / "verify"
     verify_directory.mkdir(parents=True, exist_ok=True)
     return verify_directory / f"{xml_path.stem}.txt"
 
