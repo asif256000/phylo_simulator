@@ -99,7 +99,7 @@ Each invocation overwrites the corresponding `<xml_directory>/verify/<output_nam
 python -m src.data_generation.verify_sequences --config path/to/your/config.yaml
 ```
 
-This emits `<xml_directory>/verify/<output_name>_sequences.fasta` (where `<xml_directory>` is either the default `xml_data/` or your custom directory) containing all sequences from the PhyloXML dataset in FASTA format.
+This emits `<xml_directory>/verify/<output_name>_sequences.fasta` (where `<xml_directory>` is either the default `xml_data/` or your custom directory) containing all sequences from the PhyloXML dataset in FASTA format. The output location is automatically determined from the configuration file.
 
 ### FASTA format
 
