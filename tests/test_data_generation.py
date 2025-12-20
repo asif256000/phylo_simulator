@@ -7,7 +7,7 @@ import pytest
 from Bio import Phylo
 import yaml
 
-from src.data_generation import verify_from_config
+from src.data_generation import verify_from_config, verify_sequences_from_config
 from src.data_generation.config import ConfigurationError, GenerationConfig
 from src.data_generation.tree_sequence_generator import TreeSequenceGenerator
 from src.utils import infer_branch_output_count
@@ -207,6 +207,115 @@ def test_verify_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch
     contents = output_path.read_text().strip().splitlines()
     assert len(contents) == config.dataset.tree_count
     assert all(line.endswith(";") for line in contents)
+
+
+def test_verify_sequences_module_emits_fasta_dump(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    payload = {
+        "seed": 11,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"]
+        },
+        "sequence": {"length": 5, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 2, "output_name": "generated"},
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    monkeypatch.setattr(
+        TreeSequenceGenerator,
+        "_simulate_with_iqtree",
+        lambda self, *args, **kwargs: {
+            "A": "A" * config.sequence.length,
+            "B": "C" * config.sequence.length,
+        },
+    )
+
+    generator.write_xml()
+    output_path = verify_sequences_from_config(config_path)
+
+    expected_dir = tmp_path / "xml_data" / "verify"
+    assert output_path == expected_dir / "generated_sequences.fasta"
+    assert output_path.exists()
+    contents = output_path.read_text().strip().splitlines()
+    assert contents == [
+        ">A_1",
+        "A" * config.sequence.length,
+        ">B_1",
+        "C" * config.sequence.length,
+        ">A_2",
+        "A" * config.sequence.length,
+        ">B_2",
+        "C" * config.sequence.length,
+    ]
+
+
+def test_verify_sequences_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    custom_xml_dir = str(tmp_path / "custom_xml")
+    payload = {
+        "seed": 13,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "topologies": ["(A,:B)"]
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 2,
+            "output_name": "generated",
+            "xml_directory": custom_xml_dir,
+        },
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    monkeypatch.setattr(
+        TreeSequenceGenerator,
+        "_simulate_with_iqtree",
+        lambda self, *args, **kwargs: {
+            "A": "A" * config.sequence.length,
+            "B": "C" * config.sequence.length,
+        },
+    )
+
+    generator.write_xml()
+    output_path = verify_sequences_from_config(config_path)
+
+    expected_dir = Path(custom_xml_dir) / "verify"
+    assert output_path == expected_dir / "generated_sequences.fasta"
+    assert output_path.exists()
+    contents = output_path.read_text().strip().splitlines()
+    assert contents == [
+        ">A_1",
+        "A" * config.sequence.length,
+        ">B_1",
+        "C" * config.sequence.length,
+        ">A_2",
+        "A" * config.sequence.length,
+        ">B_2",
+        "C" * config.sequence.length,
+    ]
 
 
 def test_seqgen_stdout_parsing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
