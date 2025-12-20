@@ -93,6 +93,45 @@ verify_from_config("path/to/your/config.yaml")
 
 Each invocation overwrites the corresponding `<xml_directory>/verify/<output_name>.txt` file with one Newick tree per line.
 
+## Optional: export sequences to FASTA
+
+```bash
+python -m src.data_generation.verify_sequences --config path/to/your/config.yaml
+```
+
+This emits `<xml_directory>/verify/<output_name>_sequences.fasta` (where `<xml_directory>` is either the default `xml_data/` or your custom directory) containing all sequences from the PhyloXML dataset in FASTA format.
+
+### FASTA format
+
+The FASTA file includes sequences for all trees and all taxa in the order they appear in the configuration. Each sequence header includes the taxon label suffixed with an underscore and the tree index (1-based) to avoid duplicate taxa identifiers. For example, with taxa labels `[A, B, C]` and 2 trees, the output structure is:
+
+```
+>A_1
+ATGCATGCATGC...
+>B_1
+GCTAGCTAGCTA...
+>C_1
+TTAAATTAAATT...
+>A_2
+ATGCATGCATGC...
+>B_2
+GCTAGCTAGCTA...
+>C_2
+TTAAATTAAATT...
+```
+
+Each sequence entry corresponds to a single alignment from a single tree. Sequences are written sequentially in tree order, and within each tree, in the order of the configured taxa labels.
+
+Programmatic use is also available:
+
+```python
+from src.data_generation import verify_sequences_from_config
+
+verify_sequences_from_config("path/to/your/config.yaml")
+```
+
+Each invocation overwrites the corresponding `<xml_directory>/verify/<output_name>_sequences.fasta` file.
+
 ## Parse PhyloXML to NumPy
 
 ```bash
