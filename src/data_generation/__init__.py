@@ -9,4 +9,15 @@ def verify_from_config(*args, **kwargs):
     return _verify_from_config(*args, **kwargs)
 
 
-__all__ = ["TreeSequenceGenerator", "TreeSequenceResult", "verify_from_config"]
+def verify_sequences_from_config(*args, **kwargs):
+    from .verify_sequences import verify_sequences_from_config as _verify_sequences_from_config
+
+    return _verify_sequences_from_config(*args, **kwargs)
+
+
+__all__ = [
+    "TreeSequenceGenerator",
+    "TreeSequenceResult",
+    "verify_from_config",
+    "verify_sequences_from_config",
+]
