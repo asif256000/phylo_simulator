@@ -10,15 +10,12 @@ from Bio import Phylo
 from src.data_generation.config import load_generation_config
 
 
-def verify_sequences_from_config(
-    config_path: Path | str,
-    *,
-    output_path: Path | None = None,
-) -> Path:
+def verify_sequences_from_config(config_path: Path | str) -> Path:
     """Load *config_path*, locate its XML dataset, and write a FASTA dump.
 
     Sequences are written in the order of the configured taxa, with the tree
-    index appended to each taxon label (e.g., A1, B1, A2...).
+    index appended to each taxon label (e.g., A_1, B_1, A_2...).
+    The output FASTA file is written to <xml_directory>/verify/<output_name>_sequences.fasta.
     """
 
     config = load_generation_config(config_path)
@@ -26,7 +23,7 @@ def verify_sequences_from_config(
     if not xml_path.exists():
         raise FileNotFoundError(f"PhyloXML file not found: {xml_path}")
 
-    destination = Path(output_path) if output_path else _default_sequence_path(xml_path)
+    destination = _default_sequence_path(xml_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     _write_fasta_dump(xml_path, destination, config.tree.taxa_labels)
     return destination
@@ -94,7 +91,7 @@ def main() -> None:
 
     args = _parse_args()
     t0 = time.time()
-    output_path = verify_sequences_from_config(args.config, output_path=args.output)
+    output_path = verify_sequences_from_config(args.config)
     t1 = time.time()
     print(f"Wrote FASTA dump to {output_path}")
     print(f"Time taken: {t1 - t0:.2f} seconds")
