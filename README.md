@@ -64,7 +64,7 @@ Branch lengths are drawn from a distribution mixture specified by `branch_length
 **Supported distributions:**
 - `uniform`: requires `branch_length_params.uniform.range` with two values `[min, max]`, where `min >= 0` and `max > min`. Branch lengths are sampled uniformly within this range.
 - `exponential`: requires `branch_length_params.exponential.rate` as a positive rate parameter. Branch lengths are sampled from an exponential distribution with no upper bound.
-- `truncated_exponential`: requires `branch_length_params.truncated_exponential.rate` (positive) and `branch_length_params.truncated_exponential.max` (positive upper bound). Branch lengths are drawn from an exponential distribution truncated to `[0, max]` using inverse-CDF sampling.
+- `truncated_exponential`: requires `branch_length_params.truncated_exponential.rate` (positive), `branch_length_params.truncated_exponential.max` (positive upper bound), and optionally `branch_length_params.truncated_exponential.min` (non-negative lower bound, defaults to 0). Branch lengths are drawn from an exponential distribution truncated to `[min, max]` using inverse-CDF sampling.
 
 **Rooted tree handling:**
 When `tree.rooted` is `true`, the generator first samples branch lengths for the unrooted tree backbone, then handles the root:
