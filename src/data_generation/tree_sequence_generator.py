@@ -485,6 +485,20 @@ class TreeSequenceGenerator:
                 raise ValueError("Exponential branch length distribution requires a positive rate")
             return self._rng.expovariate(rate)
 
+        if distribution == "truncated_exponential":
+            params = self.config.tree.truncated_exponential_params
+            if params is None:
+                raise ValueError("Truncated exponential distribution parameters are not configured")
+            rate, upper = params
+            if upper <= 0:
+                raise ValueError("Truncated exponential upper bound must be positive")
+            # Inverse transform sampling for Exp(rate) truncated to [0, upper]
+            u = self._rng.random()
+            scale = 1.0 - math.exp(-rate * upper)
+            if scale <= 0:
+                raise ValueError("Invalid truncated exponential scale; check parameters")
+            return -math.log1p(-u * scale) / rate
+
         raise ValueError(f"Unsupported branch length distribution '{distribution}'")
 
     def _tree_to_newick(self, tree: BaseTree) -> str:
