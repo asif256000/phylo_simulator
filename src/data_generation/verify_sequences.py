@@ -25,6 +25,8 @@ def verify_sequences_from_config(config_path: Path | str) -> Path:
 
     destination = _default_sequence_path(xml_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        destination.unlink()
     _write_fasta_dump(xml_path, destination, config.tree.taxa_labels)
     return destination
 
