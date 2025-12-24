@@ -68,7 +68,7 @@ Branch lengths are drawn from a distribution mixture specified by `branch_length
 
 **Rooted tree handling:**
 When `tree.rooted` is `true`, the generator first samples branch lengths for the unrooted tree backbone, then handles the root:
-- If `split_root_branch: true` (default): the root connector edge is split into two parts with a random pivot point. The minimum pivot position uses the lower bound from `uniform.range` if a uniform distribution is present, otherwise zero.
+- If `split_root_branch: true` (default): the root connector edge is split into two parts with a random pivot point. The minimum pivot position uses the lower bound from the configured bounded distributions: `uniform.range[0]` if uniform is present, or `truncated_exponential.min` if truncated_exponential is present, otherwise zero.
 - If `split_root_branch: false`: both root edges are sampled independently as regular branches.
 
 For two-taxon unrooted trees, the single sampled branch length is assigned to the first taxon's edge.
