@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import math
+import random
+from collections import Counter
 
 import pytest
 from Bio import Phylo
@@ -22,13 +24,23 @@ def _branch_lengths(tree: Phylo.BaseTree.Tree) -> list[float]:
     return lengths
 
 
+def _expected_plan_count(config: GenerationConfig) -> int:
+    topologies = config.tree.topologies
+    if not topologies:
+        return 0
+    base = config.dataset.tree_count / len(topologies)
+    total_per_topology = sum(math.ceil(base * weight) for _, weight in config.tree.branch_length_distributions)
+    return total_per_topology * len(topologies)
+
+
 @pytest.fixture()
 def generation_config(tmp_path: Path) -> GenerationConfig:
     payload: dict[str, object] = {
         "seed": 42,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -64,7 +76,7 @@ def test_generate_tree_and_sequences(monkeypatch: pytest.MonkeyPatch, generation
     assert len(result.tree.get_terminals()) == 2
     lengths = _branch_lengths(result.tree)
     assert lengths
-    min_len, max_len = generation_config.tree.branch_length_range
+    min_len, max_len = generation_config.tree.uniform_range  # type: ignore[misc]
     assert all(0 <= length <= max_len for length in lengths)
     assert any(length >= min_len for length in lengths)
     assert len(lengths) == infer_branch_output_count(len(generation_config.tree.taxa_labels), rooted=True)
@@ -88,7 +100,7 @@ def test_generate_phylogenies_respects_count(monkeypatch: pytest.MonkeyPatch, ge
     monkeypatch.setattr(TreeSequenceGenerator, "_simulate_with_iqtree", fake_sim)
 
     phylogenies, aligned = generator.generate_phylogenies()
-    assert len(phylogenies) == generation_config.dataset.tree_count
+    assert len(phylogenies) == _expected_plan_count(generation_config)
     assert aligned
     for phylogeny in phylogenies:
         assert isinstance(phylogeny, Phylo.PhyloXML.Phylogeny)
@@ -111,7 +123,7 @@ def test_write_xml_creates_expected_phyloxml(monkeypatch: pytest.MonkeyPatch, ge
     assert output_path.exists()
 
     phyloxml_entries = list(Phylo.parse(str(output_path), "phyloxml"))
-    assert len(phyloxml_entries) == generation_config.dataset.tree_count
+    assert len(phyloxml_entries) == _expected_plan_count(generation_config)
     assert phyloxml_entries[0].other[0].value == "(A,:B)"
 
 
@@ -120,9 +132,11 @@ def test_verify_module_emits_newick_dump(monkeypatch: pytest.MonkeyPatch, tmp_pa
         "seed": 7,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
-            "topologies": ["(A,:B)"]
+            "split_root_branch": False,
+            "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 6, "model": "JC"},
         "simulation": {
@@ -166,9 +180,10 @@ def test_verify_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch
         "seed": 7,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
             "rooted": True,
-            "topologies": ["(A,:B)"]
+            "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 6, "model": "JC"},
         "simulation": {
@@ -214,9 +229,10 @@ def test_verify_sequences_module_emits_fasta_dump(monkeypatch: pytest.MonkeyPatc
         "seed": 11,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
-            "topologies": ["(A,:B)"]
+            "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 5, "model": "JC"},
         "simulation": {
@@ -267,9 +283,10 @@ def test_verify_sequences_module_with_custom_xml_directory(monkeypatch: pytest.M
         "seed": 13,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
-            "topologies": ["(A,:B)"]
+            "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 4, "model": "JC"},
         "simulation": {
@@ -323,9 +340,10 @@ def test_seqgen_stdout_parsing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
         "seed": 5,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
-            "topologies": ["(A,:B)"]
+            "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 4, "model": "JC"},
         "simulation": {
@@ -380,9 +398,10 @@ def test_seqgen_reads_output_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
         "seed": 5,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
-            "topologies": ["(A,:B)"]
+            "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 4, "model": "JC"},
         "simulation": {
@@ -429,9 +448,10 @@ def test_seqgen_rejects_multiple_replicates(monkeypatch: pytest.MonkeyPatch, tmp
         "seed": 5,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
-            "topologies": ["(A,:B)"]
+            "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 4, "model": "JC"},
         "simulation": {
@@ -461,7 +481,8 @@ def test_topologies_required(tmp_path: Path) -> None:
         "seed": 5,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
         },
         "sequence": {"length": 4, "model": "JC"},
@@ -483,7 +504,8 @@ def test_rooted_topology_requires_colon(tmp_path: Path) -> None:
         "seed": 3,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["(A,B)"]
         },
@@ -506,7 +528,8 @@ def test_unrooted_topology_ignores_colon(tmp_path: Path) -> None:
         "seed": 3,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": False,
             "topologies": ["(A,:(B,C))"],
         },
@@ -530,7 +553,8 @@ def test_topology_rejects_duplicate_taxa(tmp_path: Path) -> None:
         "seed": 5,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["((A,A),:B)"],
         },
@@ -553,9 +577,9 @@ def test_branch_length_distribution_validation(tmp_path: Path) -> None:
         "seed": 12,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 0.7, "exponential": 0.7},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
-            "branch_length_distribution": "normal",
             "topologies": ["(A,:B)"],
         },
         "sequence": {"length": 4, "model": "JC"},
@@ -572,12 +596,70 @@ def test_branch_length_distribution_validation(tmp_path: Path) -> None:
         GenerationConfig.from_mapping(payload, base_path=tmp_path)
 
 
+def test_exponential_branch_length_distribution_requires_param(tmp_path: Path) -> None:
+    payload = {
+        "seed": 13,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"exponential": 1.0},
+            "branch_length_params": {},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "generated"},
+    }
+
+    with pytest.raises(ConfigurationError):
+        GenerationConfig.from_mapping(payload, base_path=tmp_path)
+
+
+def test_exponential_branch_length_sampling(tmp_path: Path) -> None:
+    rate = 1.5
+    payload = {
+        "seed": 21,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"exponential": 1.0},
+            "branch_length_params": {"exponential": {"rate": rate}},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "generated"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    expectation_rng = random.Random(config.seed)
+    expected = expectation_rng.expovariate(rate)
+
+    sample = generator._sample_branch_length()
+    assert math.isclose(sample, expected)
+
+
 def test_split_root_branch_flag_parsing(tmp_path: Path) -> None:
     payload = {
         "seed": 12,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.3],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.3]}},
             "rooted": True,
             "split_root_branch": False,
             "topologies": ["((A,B),:C)"],
@@ -602,7 +684,8 @@ def test_topology_cycle_even_distribution(monkeypatch: pytest.MonkeyPatch, tmp_p
         "seed": 9,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["((A,B),:C)", "((A,C),:B)"]
         },
@@ -630,7 +713,7 @@ def test_topology_cycle_even_distribution(monkeypatch: pytest.MonkeyPatch, tmp_p
 
     phylogenies, _ = generator.generate_phylogenies()
     observed = [phylogeny.other[0].value for phylogeny in phylogenies]
-    assert observed == ["((A,B),:C)", "((A,C),:B)", "((A,B),:C)", "((A,C),:B)", "((A,B),:C)"]
+    assert Counter(observed) == Counter({"((A,B),:C)": 3, "((A,C),:B)": 3})
 
 
 def test_root_insertion_preserves_neighbor_pairs(tmp_path: Path) -> None:
@@ -638,7 +721,8 @@ def test_root_insertion_preserves_neighbor_pairs(tmp_path: Path) -> None:
         "seed": 17,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.5],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["((A,B),:C)", "((A,C),:B)", "((B,C),:A)"],
         },
@@ -672,7 +756,8 @@ def test_branch_sampling_uses_unrooted_count(monkeypatch: pytest.MonkeyPatch, tm
         "seed": 3,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.9],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.9]}},
             "rooted": True,
             "topologies": ["((A,B),:C)"],
         },
@@ -707,7 +792,8 @@ def test_root_split_preserves_total_length(monkeypatch: pytest.MonkeyPatch, tmp_
         "seed": 5,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.0, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.0, 1.0]}},
             "rooted": True,
             "topologies": ["((A,B),:C)"],
         },
@@ -743,7 +829,8 @@ def test_rooted_no_split_draws_independent_edges(monkeypatch: pytest.MonkeyPatch
         "seed": 5,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
             "rooted": True,
             "split_root_branch": False,
             "topologies": ["((A,B),:C)"],
@@ -780,7 +867,8 @@ def test_unrooted_two_taxa_assigns_single_branch(tmp_path: Path) -> None:
         "seed": 12,
         "tree": {
             "taxa_labels": ["taxon_1", "taxon_2"],
-            "branch_length_range": [0.1, 0.3],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": False,
             "topologies": ["(taxon_1,taxon_2)"],
         },
@@ -813,7 +901,8 @@ def test_three_taxa_tree_respects_topology(tmp_path: Path) -> None:
         "seed": 11,
         "tree": {
             "taxa_labels": ["sp1", "sp2", "sp3"],
-            "branch_length_range": [0.5, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.5, 1.0]}},
             "rooted": True,
             "topologies": ["((sp1,sp2),:sp3)"],
         },
@@ -846,7 +935,8 @@ def test_four_taxa_tree_supports_double_cherries(tmp_path: Path) -> None:
         "seed": 21,
         "tree": {
             "taxa_labels": ["sp1", "sp2", "sp3", "sp4"],
-            "branch_length_range": [0.2, 0.6],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.2, 0.6]}},
             "rooted": False,
             "topologies": ["((sp1,sp2),(sp3,sp4))"],
         },
@@ -900,9 +990,10 @@ def test_topology_validation_requires_all_taxa(tmp_path: Path) -> None:
         "seed": 15,
         "tree": {
             "taxa_labels": ["A", "B", "C", "D"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.5, 1.0]}},
             "rooted": True,
-            "topologies": ["((A,B),:C)"],
+            "topologies": ["(A,B)"],
         },
         "sequence": {"length": 4, "model": "JC"},
         "simulation": {
@@ -925,7 +1016,8 @@ def test_custom_xml_directory(tmp_path: Path) -> None:
         "seed": 42,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.2, 0.6]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -955,7 +1047,8 @@ def test_custom_npy_directory(tmp_path: Path) -> None:
         "seed": 42,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -986,7 +1079,8 @@ def test_both_custom_directories(tmp_path: Path) -> None:
         "seed": 42,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -1018,7 +1112,8 @@ def test_default_directories_when_not_specified(tmp_path: Path) -> None:
         "seed": 42,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -1048,7 +1143,8 @@ def test_empty_xml_directory_raises_error(tmp_path: Path) -> None:
         "seed": 42,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -1076,7 +1172,8 @@ def test_empty_npy_directory_raises_error(tmp_path: Path) -> None:
         "seed": 42,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 1.0],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
