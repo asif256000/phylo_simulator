@@ -36,6 +36,8 @@ class NpyDatasetWriter(DatasetWriter):
 
         output_path = self.output_path or self.config.dataset.output_npy_path()
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        if output_path.exists():
+            output_path.unlink()
 
         dtype = np.dtype(
             [
