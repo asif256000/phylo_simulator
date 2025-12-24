@@ -96,16 +96,18 @@ class TreeSequenceGenerator:
 
         return phylogenies, all_aligned
 
-    def write_xml(self) -> Path:
+    def write_xml(self) -> tuple[Path, int]:
         phylogenies, aligned = self.generate_phylogenies()
         dataset_settings = self.config.dataset
         dataset_settings.ensure_xml_directory()
         output_path = dataset_settings.xml_path()
+        if output_path.exists():
+            output_path.unlink()
         phyloxml = PhyloXML.Phyloxml({})
         phyloxml.phylogenies = phylogenies
         with output_path.open("w", encoding="utf-8") as handle:
             phylo_write(phyloxml, handle, "phyloxml")
-        return output_path
+        return output_path, len(phylogenies)
 
     def _build_tree(self, topology_override: TopologySpec | None = None) -> tuple[BaseTree, TopologySpec]:
         taxa_count = self.config.tree.taxa_count
