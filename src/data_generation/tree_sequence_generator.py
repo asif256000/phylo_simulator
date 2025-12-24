@@ -57,6 +57,7 @@ class TreeSequenceGenerator:
         result = self.generate_tree_and_sequences(topology=topology)
         phylogeny = self._attach_sequences(result.tree, result.sequences, result.aligned)
         self._annotate_topology(phylogeny, result.topology)
+        self._annotate_newick(phylogeny, self._tree_to_newick(result.tree).strip())
         return phylogeny, result.aligned
 
     def generate_phylogenies(self) -> tuple[list[Phylogeny], bool]:
@@ -190,8 +191,20 @@ class TreeSequenceGenerator:
 
     def _assign_branch_lengths(self, root: Clade, topology: TopologySpec) -> None:
         num_taxa = self.config.tree.taxa_count
+        if self.config.tree.rooted and not self.config.tree.split_root_branch:
+            segment_count = infer_branch_output_count(num_taxa, rooted=True)
+            if segment_count <= 0:
+                return
+            samples = [self._sample_branch_length() for _ in range(segment_count)]
+            self._assign_rooted_no_split(root, iter(samples))
+            return
+
         segment_count = infer_branch_output_count(num_taxa, rooted=False)
         if segment_count <= 0:
+            return
+
+        if num_taxa in {2, 3, 4}:
+            self._assign_small_tree_branch_lengths(root, topology, segment_count)
             return
 
         samples = [self._sample_branch_length() for _ in range(segment_count)]
@@ -203,6 +216,122 @@ class TreeSequenceGenerator:
             self._assign_rooted_branch_lengths(root, length_iter)
         else:
             self._assign_unrooted_branch_lengths(root, length_iter, first_taxon)
+
+    def _assign_small_tree_branch_lengths(self, root: Clade, topology: TopologySpec, segment_count: int) -> None:
+        samples = [self._sample_branch_length() for _ in range(segment_count)]
+
+        if self.config.tree.taxa_count == 2:
+            self._assign_two_taxa_branch_lengths(root, samples)
+            return
+
+        if not self.config.tree.rooted:
+            flattened = flatten_topology(topology)
+            first_taxon = flattened[0] if flattened else None
+            self._assign_unrooted_branch_lengths(root, iter(samples), first_taxon)
+            return
+
+        connector_length, *remaining = samples
+        target_child = self._root_side_child(root, topology)
+        self._split_root_children(
+            root,
+            connector_length,
+            target_child=target_child,
+            enforce_min=True,
+        )
+
+        if remaining:
+            self._populate_branch_lengths(root, iter(remaining))
+
+    def _assign_two_taxa_branch_lengths(self, root: Clade, samples: list[float]) -> None:
+        if not samples:
+            return
+        connector_length = samples[0]
+        children = list(root.clades)
+        if not children:
+            return
+
+        if len(children) == 1:
+            children[0].branch_length = connector_length
+            return
+
+        preferred = self._child_containing_taxon(root, self.config.tree.taxa_labels[0])
+        if preferred is None:
+            preferred = children[0]
+
+        if self.config.tree.rooted:
+            target_child = preferred if preferred in children else None
+            self._split_root_children(
+                root,
+                connector_length,
+                target_child=target_child,
+                enforce_min=True,
+            )
+            return
+
+        preferred.branch_length = connector_length
+
+    def _split_root_children(
+        self,
+        root: Clade,
+        connector_length: float,
+        *,
+        target_child: Clade | None,
+        enforce_min: bool,
+    ) -> None:
+        children = list(root.clades)
+        if not children:
+            return
+
+        if len(children) == 1:
+            children[0].branch_length = connector_length
+            return
+
+        split_value, remainder = self._split_length(connector_length, enforce_min=enforce_min)
+
+        if target_child is None:
+            if self._rng.random() < 0.5:
+                children[0].branch_length = split_value
+                children[1].branch_length = remainder
+            else:
+                children[0].branch_length = remainder
+                children[1].branch_length = split_value
+            return
+
+        if target_child is children[0]:
+            children[0].branch_length = split_value
+            children[1].branch_length = remainder
+        elif target_child is children[1]:
+            children[0].branch_length = remainder
+            children[1].branch_length = split_value
+        else:
+            children[0].branch_length = remainder
+            children[1].branch_length = split_value
+
+    def _split_length(self, total: float, *, enforce_min: bool) -> tuple[float, float]:
+        min_len, _ = self.config.tree.branch_length_range
+        lower_bound = min_len if enforce_min else 0.0
+        upper_bound = total
+        if upper_bound < lower_bound:
+            lower_bound = upper_bound
+        if upper_bound == lower_bound:
+            first = upper_bound
+        else:
+            first = self._rng.uniform(lower_bound, upper_bound)
+        second = max(total - first, 0.0)
+        return first, second
+
+    def _root_side_child(self, root: Clade, topology: TopologySpec) -> Clade | None:
+        if topology.root_index is None:
+            return None
+        children = list(root.clades)
+        if len(children) < 2:
+            return None
+
+        right_taxa = set(flatten_topology(topology.tokens[topology.root_index + 1 :]))
+        for child in children:
+            if any(leaf.name in right_taxa for leaf in child.get_terminals()):
+                return child
+        return None
 
     def _assign_rooted_branch_lengths(self, root: Clade, length_iter: Iterator[float]) -> None:
         children = list(root.clades)
@@ -233,6 +362,20 @@ class TreeSequenceGenerator:
 
         for child in children:
             self._populate_branch_lengths(child, length_iter)
+
+    def _assign_rooted_no_split(self, root: Clade, length_iter: Iterator[float]) -> None:
+        children = list(root.clades)
+        if len(children) < 2:
+            self._assign_unrooted_branch_lengths(root, length_iter, None)
+            return
+
+        for child in children:
+            try:
+                child.branch_length = next(length_iter)
+            except StopIteration as exc:  # pragma: no cover - defensive guard
+                raise RuntimeError("Missing branch length sample for rooted tree") from exc
+
+        self._populate_branch_lengths(root, length_iter)
 
     def _assign_unrooted_branch_lengths(
         self,
@@ -357,6 +500,14 @@ class TreeSequenceGenerator:
     def _annotate_topology(self, phylogeny: Phylogeny, topology: TopologySpec) -> None:
         topology_str = format_topology(topology)
         other_entry = Other(tag="topology", value=topology_str)
+        existing = getattr(phylogeny, "other", None)
+        if existing is None:
+            phylogeny.other = [other_entry]
+        else:
+            phylogeny.other.append(other_entry)
+
+    def _annotate_newick(self, phylogeny: Phylogeny, newick: str) -> None:
+        other_entry = Other(tag="newick", value=newick)
         existing = getattr(phylogeny, "other", None)
         if existing is None:
             phylogeny.other = [other_entry]
