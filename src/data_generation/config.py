@@ -69,6 +69,17 @@ class TreeSettings:
         return float(rate) if rate is not None else None
 
     @property
+    def truncated_exponential_params(self) -> Optional[tuple[float, float]]:
+        params = self.branch_length_params.get("truncated_exponential")
+        if not params:
+            return None
+        rate = params.get("rate")
+        upper = params.get("max")
+        if rate is None or upper is None:
+            return None
+        return float(rate), float(upper)
+
+    @property
     def min_branch_length(self) -> float:
         rng = self.uniform_range
         if rng is None:
@@ -223,6 +234,18 @@ class GenerationConfig:
                 if rate <= 0:
                     raise ConfigurationError("'exponential' distribution 'rate' must be positive")
                 parsed_params[dist_name]["rate"] = rate
+            elif dist_name == "truncated_exponential":
+                rate_raw = parsed_params[dist_name].get("rate")
+                max_raw = parsed_params[dist_name].get("max")
+                try:
+                    rate = float(rate_raw)
+                    max_value = float(max_raw)
+                except Exception as exc:
+                    raise ConfigurationError("'truncated_exponential' requires numeric 'rate' and 'max'") from exc
+                if rate <= 0 or max_value <= 0:
+                    raise ConfigurationError("'truncated_exponential' requires positive 'rate' and 'max'")
+                parsed_params[dist_name]["rate"] = rate
+                parsed_params[dist_name]["max"] = max_value
             else:
                 raise ConfigurationError(f"Unsupported branch length distribution '{dist_name}'")
         split_root_branch = bool(tree_payload.get("split_root_branch", True))
