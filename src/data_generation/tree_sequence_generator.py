@@ -489,15 +489,17 @@ class TreeSequenceGenerator:
             params = self.config.tree.truncated_exponential_params
             if params is None:
                 raise ValueError("Truncated exponential distribution parameters are not configured")
-            rate, upper = params
-            if upper <= 0:
-                raise ValueError("Truncated exponential upper bound must be positive")
-            # Inverse transform sampling for Exp(rate) truncated to [0, upper]
+            rate, lower, upper = params
+            if upper <= lower or lower < 0:
+                raise ValueError("Truncated exponential requires 0 <= min < max")
+            # Inverse transform sampling for Exp(rate) truncated to [lower, upper]
             u = self._rng.random()
-            scale = 1.0 - math.exp(-rate * upper)
+            exp_minus_rate_lower = math.exp(-rate * lower)
+            exp_minus_rate_upper = math.exp(-rate * upper)
+            scale = exp_minus_rate_lower - exp_minus_rate_upper
             if scale <= 0:
                 raise ValueError("Invalid truncated exponential scale; check parameters")
-            return -math.log1p(-u * scale) / rate
+            return -math.log(exp_minus_rate_lower - u * scale) / rate
 
         raise ValueError(f"Unsupported branch length distribution '{distribution}'")
 
