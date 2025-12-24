@@ -183,5 +183,41 @@
       "xml_directory": null,
       "npy_directory": null
     }
+  },
+  {
+    "description": "Truncated exponential example",
+    "seed": 4242,
+    "parallel_cores": 2,
+    "tree": {
+      "taxa_labels": ["x1", "x2", "x3"],
+      "branch_length_distributions": {"truncated_exponential": 0.6, "uniform": 0.4},
+      "branch_length_params": {
+        "truncated_exponential": {"rate": 1.1, "max": 0.8},
+        "uniform": {"range": [0.05, 0.3]}
+      },
+      "rooted": true,
+      "split_root_branch": false,
+      "topologies": ["((x1,x2),:x3)"]
+    },
+    "sequence": {
+      "length": 500,
+      "model": "JC"
+    },
+    "simulation": {
+      "backend": "iqtree",
+      "iqtree_path": "/absolute/path/to/iqtree3",
+      "seqgen_path": "/absolute/path/to/seq-gen",
+      "seqgen_kwargs": {},
+      "indel": {
+        "enabled": false,
+        "rates": [0.02, 0.02]
+      }
+    },
+    "dataset": {
+      "tree_count": 30,
+      "output_name": "truncated_exp_example",
+      "xml_directory": null,
+      "npy_directory": null
+    }
   }
 ]
