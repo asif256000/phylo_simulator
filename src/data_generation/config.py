@@ -37,15 +37,43 @@ class TreeSettings:
     """User configurable options controlling tree generation."""
 
     taxa_labels: tuple[str, ...]
-    branch_length_range: tuple[float, float]
     rooted: bool = True
     topologies: tuple[TopologySpec, ...] = field(default_factory=tuple)
-    branch_length_distribution: str = "uniform"
+    branch_length_distributions: tuple[tuple[str, float], ...] = field(default_factory=tuple)
+    branch_length_params: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     split_root_branch: bool = True
 
     @property
     def taxa_count(self) -> int:
         return len(self.taxa_labels)
+
+    @property
+    def uniform_range(self) -> Optional[tuple[float, float]]:
+        params = self.branch_length_params.get("uniform")
+        if not params:
+            return None
+        rng = params.get("range")
+        if not isinstance(rng, Iterable):  # pragma: no cover - defensive
+            return None
+        values = tuple(float(v) for v in rng)
+        if len(values) != 2:  # pragma: no cover - defensive
+            return None
+        return values  # type: ignore[return-value]
+
+    @property
+    def exponential_rate(self) -> Optional[float]:
+        params = self.branch_length_params.get("exponential")
+        if not params:
+            return None
+        rate = params.get("rate")
+        return float(rate) if rate is not None else None
+
+    @property
+    def min_branch_length(self) -> float:
+        rng = self.uniform_range
+        if rng is None:
+            return 0.0
+        return rng[0]
 
 
 @dataclass
@@ -133,32 +161,77 @@ class GenerationConfig:
         if not taxa_labels:
             raise ConfigurationError("'tree.taxa_labels' must contain at least one label")
 
-        branch_range_data = tree_payload.get("branch_length_range", (0.1, 1.0))
-        if not isinstance(branch_range_data, Iterable):
-            raise ConfigurationError("'tree.branch_length_range' must be an iterable of two numbers")
-        branch_range_tuple = tuple(float(value) for value in branch_range_data)
-        if len(branch_range_tuple) != 2:
-            raise ConfigurationError("'tree.branch_length_range' must contain exactly two values")
-        min_branch, max_branch = branch_range_tuple
-        if min_branch < 0 or max_branch <= 0 or max_branch < min_branch:
-            raise ConfigurationError("Invalid 'tree.branch_length_range' values")
-
         rooted = bool(tree_payload.get("rooted", True))
         parsed_topologies = _parse_topologies(tree_payload.get("topologies"), taxa_labels, rooted=rooted)
-        distribution_raw = tree_payload.get("branch_length_distribution", "uniform")
-        try:
-            distribution = str(distribution_raw).strip().lower()
-        except Exception as exc:
-            raise ConfigurationError("'tree.branch_length_distribution' must be a string") from exc
-        if distribution != "uniform":
-            raise ConfigurationError("Only 'uniform' branch length distribution is currently supported")
+        distributions_raw = tree_payload.get("branch_length_distributions")
+        params_payload = tree_payload.get("branch_length_params")
+
+        distributions_list: list[tuple[str, float]] = []
+        parsed_params: dict[str, dict[str, Any]] = {}
+
+        if distributions_raw is None or not isinstance(distributions_raw, Mapping):
+            raise ConfigurationError("'tree.branch_length_distributions' must be a mapping of name to weight")
+
+        total_weight = 0.0
+        for name_raw, weight_raw in distributions_raw.items():
+            try:
+                name = str(name_raw).strip().lower()
+            except Exception as exc:
+                raise ConfigurationError("Distribution names must be strings") from exc
+            try:
+                weight = float(weight_raw)
+            except Exception as exc:
+                raise ConfigurationError("Distribution weights must be numbers") from exc
+            if weight <= 0:
+                raise ConfigurationError("Distribution weights must be positive")
+            distributions_list.append((name, weight))
+            total_weight += weight
+
+        if not distributions_list:
+            raise ConfigurationError("'tree.branch_length_distributions' must contain at least one entry")
+        if abs(total_weight - 1.0) > 1e-6:
+            raise ConfigurationError("Branch length distribution weights must sum to 1")
+
+        if params_payload is None or not isinstance(params_payload, Mapping):
+            raise ConfigurationError("'tree.branch_length_params' must be provided as a mapping")
+
+        for dist_name, _ in distributions_list:
+            dist_params_raw = params_payload.get(dist_name)
+            if not isinstance(dist_params_raw, Mapping):
+                raise ConfigurationError(f"Missing or invalid params for distribution '{dist_name}'")
+            parsed_params[dist_name] = dict(dist_params_raw)
+
+        # Validate known distributions
+        for dist_name, _ in distributions_list:
+            if dist_name == "uniform":
+                raw_range = parsed_params[dist_name].get("range")
+                if not isinstance(raw_range, Iterable):
+                    raise ConfigurationError("'uniform' distribution requires a 'range' iterable of two numbers")
+                values = tuple(float(v) for v in raw_range)
+                if len(values) != 2:
+                    raise ConfigurationError("'uniform' distribution range must have exactly two values")
+                min_branch, max_branch = values
+                if min_branch < 0 or max_branch <= 0 or max_branch <= min_branch:
+                    raise ConfigurationError("Invalid 'uniform' distribution range values")
+                parsed_params[dist_name]["range"] = (min_branch, max_branch)
+            elif dist_name == "exponential":
+                rate_raw = parsed_params[dist_name].get("rate")
+                try:
+                    rate = float(rate_raw)
+                except Exception as exc:
+                    raise ConfigurationError("'exponential' distribution requires numeric 'rate'") from exc
+                if rate <= 0:
+                    raise ConfigurationError("'exponential' distribution 'rate' must be positive")
+                parsed_params[dist_name]["rate"] = rate
+            else:
+                raise ConfigurationError(f"Unsupported branch length distribution '{dist_name}'")
         split_root_branch = bool(tree_payload.get("split_root_branch", True))
         tree_settings = TreeSettings(
             taxa_labels=taxa_labels,
-            branch_length_range=(min_branch, max_branch),
             rooted=rooted,
             topologies=parsed_topologies,
-            branch_length_distribution=distribution,
+            branch_length_distributions=tuple(distributions_list),
+            branch_length_params=parsed_params,
             split_root_branch=split_root_branch,
         )
 
@@ -249,7 +322,7 @@ class GenerationConfig:
         if parallel_cores <= 0:
             raise ConfigurationError("'parallel_cores' must be a positive integer")
 
-        return cls(
+        return GenerationConfig(
             seed=seed,
             tree=tree_settings,
             sequence=sequence_settings,
