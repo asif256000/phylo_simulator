@@ -69,15 +69,17 @@ class TreeSettings:
         return float(rate) if rate is not None else None
 
     @property
-    def truncated_exponential_params(self) -> Optional[tuple[float, float]]:
+    def truncated_exponential_params(self) -> Optional[tuple[float, float, float]]:
+        """Return (rate, min, max) for truncated exponential; min defaults to 0 if not provided."""
         params = self.branch_length_params.get("truncated_exponential")
         if not params:
             return None
         rate = params.get("rate")
+        lower = params.get("min", 0.0)
         upper = params.get("max")
         if rate is None or upper is None:
             return None
-        return float(rate), float(upper)
+        return float(rate), float(lower), float(upper)
 
     @property
     def min_branch_length(self) -> float:
@@ -237,14 +239,19 @@ class GenerationConfig:
             elif dist_name == "truncated_exponential":
                 rate_raw = parsed_params[dist_name].get("rate")
                 max_raw = parsed_params[dist_name].get("max")
+                min_raw = parsed_params[dist_name].get("min")
                 try:
                     rate = float(rate_raw)
                     max_value = float(max_raw)
+                    min_value = float(min_raw) if min_raw is not None else 0.0
                 except Exception as exc:
-                    raise ConfigurationError("'truncated_exponential' requires numeric 'rate' and 'max'") from exc
+                    raise ConfigurationError("'truncated_exponential' requires numeric 'rate', 'max', and optional 'min' (defaults to 0)") from exc
                 if rate <= 0 or max_value <= 0:
                     raise ConfigurationError("'truncated_exponential' requires positive 'rate' and 'max'")
+                if min_value < 0 or min_value >= max_value:
+                    raise ConfigurationError("'truncated_exponential' 'min' must be >= 0 and < 'max'")
                 parsed_params[dist_name]["rate"] = rate
+                parsed_params[dist_name]["min"] = min_value
                 parsed_params[dist_name]["max"] = max_value
             else:
                 raise ConfigurationError(f"Unsupported branch length distribution '{dist_name}'")
