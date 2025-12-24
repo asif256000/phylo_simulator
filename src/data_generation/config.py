@@ -83,10 +83,20 @@ class TreeSettings:
 
     @property
     def min_branch_length(self) -> float:
+        """Return the minimum branch length used for root pivoting. 
+        
+        Priority: uniform.range[0] > truncated_exponential.min > 0.0
+        """
         rng = self.uniform_range
-        if rng is None:
-            return 0.0
-        return rng[0]
+        if rng is not None:
+            return rng[0]
+        
+        te_params = self.truncated_exponential_params
+        if te_params is not None:
+            _, lower, _ = te_params
+            return lower
+        
+        return 0.0
 
 
 @dataclass
