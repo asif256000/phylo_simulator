@@ -8,6 +8,7 @@
       "branch_length_range": [0.1, 1.0],
       "branch_length_distribution": "uniform",
       "rooted": true,
+      "split_root_branch": true,
       "topologies": ["(A,:B)"]
     },
     "sequence": {
@@ -40,6 +41,7 @@
       "branch_length_range": [0.05, 0.5],
       "branch_length_distribution": "uniform",
       "rooted": true,
+      "split_root_branch": true,
       "topologies": ["(taxon_1,:taxon_2)"]
     },
     "sequence": {
@@ -76,6 +78,7 @@
       "branch_length_range": [0.1, 0.9],
       "branch_length_distribution": "uniform",
       "rooted": true,
+      "split_root_branch": true,
       "topologies": ["((A,B),:C)", "((A,C),:B)"]
     },
     "sequence": {
@@ -108,6 +111,7 @@
       "branch_length_range": [0.2, 0.8],
       "branch_length_distribution": "uniform",
       "rooted": true,
+      "split_root_branch": false,
       "topologies": ["((t1,t2),:(t3,t4))", "((t1,t3),:(t2,t4))"]
     },
     "sequence": {
@@ -140,6 +144,7 @@
       "branch_length_range": [0.15, 0.6],
       "branch_length_distribution": "uniform",
       "rooted": false,
+      "split_root_branch": true,
       "topologies": [
         "((p1,p2),(p3,p4))",
         "((p1,p3),(p2,p4))",
