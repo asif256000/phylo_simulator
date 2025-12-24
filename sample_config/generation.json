@@ -192,7 +192,7 @@
       "taxa_labels": ["x1", "x2", "x3"],
       "branch_length_distributions": {"truncated_exponential": 0.6, "uniform": 0.4},
       "branch_length_params": {
-        "truncated_exponential": {"rate": 1.1, "max": 0.8},
+        "truncated_exponential": {"rate": 10.0, "min": 0.02, "max": 0.2},
         "uniform": {"range": [0.05, 0.3]}
       },
       "rooted": true,
