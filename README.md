@@ -141,20 +141,19 @@ python -m src.xml_parser --config path/to/your/config.yaml
 The parser writes `npy_data/<output_name>.npy` (or to the custom `npy_directory` if specified) with fields:
 
 - `X`: one-hot encoded sequences shaped `[taxa, length, channels]` (gap channel added when indels enabled).
-- `y_br`: branch lengths ordered deterministically for 2–4 taxa (or canonical ordering for larger cases).
+- `y_br`: branch lengths in the fixed 2–4 taxa layouts (rooted doubles edges; unrooted stores only present edges).
 - `branch_mask`: boolean mask for present branches.
 - `y_top`: one-hot topology indicator.
 - `tree_index`: original index from the XML file.
 
 ### Branch representation for NumPy matrices
 
-The parser supports specialized branch vector formats for 2-, 3-, and 4-taxa trees. For these cases, the branch vector `y_br` has length equal to `2 × (2n - 3)` (the number of branches in the unrooted tree times two), with deterministic slot assignments:
+The NumPy writer supports only 2–4 taxa and emits different layouts for rooted versus unrooted datasets:
 
-- **2-taxa**: `[a, b]`
-- **3-taxa**: `[a1, a2, b1, b2, c1, c2]`
-- **4-taxa**: `[a1, a2, b1, b2, c1, c2, d1, d2, i1, i2]`
+- Rooted: branch vectors double each edge to keep a stable ordering regardless of where the root lands. Lengths are 2 (2 taxa), 6 (3 taxa), and 10 (4 taxa). The paired slots for a branch are both populated when the root splits that branch.
+- Unrooted: branch vectors contain only present edges in deterministic order (no doubling). Lengths are 1 (2 taxa), 3 (3 taxa), and 5 (4 taxa). The `branch_mask` marks which slots were filled in the observed tree.
 
-In each case, the `*1` slots correspond to the standard leaf branches (always present), while the `*2` slots hold zero by default. When a tree is rooted on a particular branch, that branch is split into two segments that populate both the `*1` and `*2` slots for the corresponding taxon or internal branch. This ensures consistent ordering regardless of root placement.
+Datasets with more than four taxa are not supported by the NumPy writer.
 
 ## Testing
 
