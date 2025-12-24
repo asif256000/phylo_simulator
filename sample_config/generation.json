@@ -5,8 +5,11 @@
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["A", "B"],
-      "branch_length_range": [0.1, 1.0],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {"uniform": 0.7, "exponential": 0.3},
+      "branch_length_params": {
+        "uniform": {"range": [0.1, 1.0]},
+        "exponential": {"rate": 1.25}
+      },
       "rooted": true,
       "split_root_branch": true,
       "topologies": ["(A,:B)"]
@@ -38,8 +41,8 @@
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["taxon_1", "taxon_2"],
-      "branch_length_range": [0.05, 0.5],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {"uniform": 1.0},
+      "branch_length_params": {"uniform": {"range": [0.05, 0.5]}},
       "rooted": true,
       "split_root_branch": true,
       "topologies": ["(taxon_1,:taxon_2)"]
@@ -75,8 +78,11 @@
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["A", "B", "C"],
-      "branch_length_range": [0.1, 0.9],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {"uniform": 0.6, "exponential": 0.4},
+      "branch_length_params": {
+        "uniform": {"range": [0.1, 0.9]},
+        "exponential": {"rate": 0.9}
+      },
       "rooted": true,
       "split_root_branch": true,
       "topologies": ["((A,B),:C)", "((A,C),:B)"]
@@ -108,8 +114,8 @@
     "parallel_cores": 4,
     "tree": {
       "taxa_labels": ["t1", "t2", "t3", "t4"],
-      "branch_length_range": [0.2, 0.8],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {"exponential": 1.0},
+      "branch_length_params": {"exponential": {"rate": 0.8}},
       "rooted": true,
       "split_root_branch": false,
       "topologies": ["((t1,t2),:(t3,t4))", "((t1,t3),:(t2,t4))"]
@@ -141,8 +147,11 @@
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["p1", "p2", "p3", "p4"],
-      "branch_length_range": [0.15, 0.6],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {"uniform": 0.5, "exponential": 0.5},
+      "branch_length_params": {
+        "uniform": {"range": [0.15, 0.6]},
+        "exponential": {"rate": 1.1}
+      },
       "rooted": false,
       "split_root_branch": true,
       "topologies": [
