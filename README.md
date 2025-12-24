@@ -17,10 +17,10 @@ pip install -r requirements.txt
 
 ## Configure generation
 
-Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). Key fields:
+Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). The generator currently targets datasets with two, three, or four taxa. Key fields:
 
 - `seed`: RNG seed for reproducibility.
-- `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), and a required `topologies` list describing permitted tree structures.
+- `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), optional `split_root_branch` (defaults to `true`; when `false`, rooted trees draw both root edges independently instead of splitting the unrooted connector), and a required `topologies` list describing permitted tree structures.
 - `sequence`: sequence length and substitution model.
 - `simulation`: backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
 - `dataset`: number of trees to simulate (`tree_count`) and the output file basename (`output_name`, no extension). By default, files are written to `xml_data/<output_name>.xml` and `npy_data/<output_name>.npy`. Optionally specify custom directories with `xml_directory` and `npy_directory` (see Custom Output Directories below).
@@ -59,7 +59,7 @@ Provide one or more entries under `tree.topologies` for every configuration. Eac
 
 ### Branch lengths
 
-Regardless of the requested rootedness, the generator first treats every topology as unrooted and draws independent branch segments from the configured range. These segments cover all edges of the unrooted skeleton. When the configuration is rooted, the segment that would connect the two root-side groups is randomly split into two values—one for each child of the root—by drawing a pivot between the lower bound of the branch range and the sampled segment length. The two new edges therefore sum to the original unrooted branch, while downstream branches keep their original samples. For unrooted two-taxon datasets, only a single segment is emitted and it is attached to the first taxon mentioned in the topology, leaving the companion tip with an implicit zero-length edge. All other unrooted trees retain the sampled lengths directly.
+Regardless of the requested rootedness, the generator first treats every topology as unrooted and draws independent branch segments from the configured range. These segments cover all edges of the unrooted skeleton. When the configuration is rooted, the default behavior (`tree.split_root_branch: true`) randomly splits the segment that connects the two root-side groups into two values—one for each child of the root—by drawing a pivot between the lower bound of the branch range and the sampled segment length. The two new edges therefore sum to the original unrooted branch, while downstream branches keep their original samples. When `tree.split_root_branch` is set to `false`, rooted trees draw every branch independently from the configured range (no splitting), so the root-side edges are unrelated samples. For unrooted two-taxon datasets, only a single segment is emitted and it is attached to the first taxon mentioned in the topology, leaving the companion tip with an implicit zero-length edge. All other unrooted trees retain the sampled lengths directly.
 
 ## Generate trees and sequences (PhyloXML)
 
