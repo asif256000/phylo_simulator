@@ -25,10 +25,10 @@ def main() -> None:
     args = parse_args()
     generator = TreeSequenceGenerator.from_config_file(args.config)
     t0 = time.time()
-    output_path = generator.write_xml()
+    output_path, actual_count = generator.write_xml()
     t1 = time.time()
     print(
-        f"Generated {generator.config.dataset.tree_count} trees with backend"
+        f"Generated {actual_count} trees with backend"
         f" {generator.config.simulation.backend} -> {output_path}"
     )
     print(f"Time taken: {t1 - t0:.2f} seconds")
