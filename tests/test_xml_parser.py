@@ -46,7 +46,8 @@ def phyloxml_file(monkeypatch: pytest.MonkeyPatch, config: GenerationConfig) -> 
             "B": "C" * config.sequence.length,
         },
     )
-    return generator.write_xml()
+    path, _ = generator.write_xml()
+    return path
 
 
 def test_parse_examples_extracts_clades(phyloxml_file: Path, config: GenerationConfig) -> None:
