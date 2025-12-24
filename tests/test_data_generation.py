@@ -653,6 +653,66 @@ def test_exponential_branch_length_sampling(tmp_path: Path) -> None:
     assert math.isclose(sample, expected)
 
 
+def test_truncated_exponential_distribution_requires_params(tmp_path: Path) -> None:
+    payload = {
+        "seed": 7,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"truncated_exponential": 1.0},
+            "branch_length_params": {},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "generated"},
+    }
+
+    with pytest.raises(ConfigurationError):
+        GenerationConfig.from_mapping(payload, base_path=tmp_path)
+
+
+def test_truncated_exponential_branch_length_sampling(tmp_path: Path) -> None:
+    rate = 1.1
+    upper = 0.8
+    payload = {
+        "seed": 33,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"truncated_exponential": 1.0},
+            "branch_length_params": {"truncated_exponential": {"rate": rate, "max": upper}},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "generated"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    expectation_rng = random.Random(config.seed)
+    u = expectation_rng.random()
+    scale = 1.0 - math.exp(-rate * upper)
+    expected = -math.log1p(-u * scale) / rate
+
+    sample = generator._sample_branch_length()
+    assert math.isclose(sample, expected)
+
+
 def test_split_root_branch_flag_parsing(tmp_path: Path) -> None:
     payload = {
         "seed": 12,
