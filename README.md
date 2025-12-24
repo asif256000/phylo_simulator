@@ -17,10 +17,10 @@ pip install -r requirements.txt
 
 ## Configure generation
 
-Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). Key fields:
+Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). The generator currently targets datasets with two, three, or four taxa. Key fields:
 
 - `seed`: RNG seed for reproducibility.
-- `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), and a required `topologies` list describing permitted tree structures.
+- `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), optional `split_root_branch` (defaults to `true`; when `false`, rooted trees draw both root edges independently instead of splitting the unrooted connector), and a required `topologies` list describing permitted tree structures.
 - `sequence`: sequence length and substitution model.
 - `simulation`: backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
 - `dataset`: number of trees to simulate (`tree_count`) and the output file basename (`output_name`, no extension). By default, files are written to `xml_data/<output_name>.xml` and `npy_data/<output_name>.npy`. Optionally specify custom directories with `xml_directory` and `npy_directory` (see Custom Output Directories below).
@@ -59,7 +59,7 @@ Provide one or more entries under `tree.topologies` for every configuration. Eac
 
 ### Branch lengths
 
-Regardless of the requested rootedness, the generator first treats every topology as unrooted and draws independent branch segments from the configured range. These segments cover all edges of the unrooted skeleton. When the configuration is rooted, the segment that would connect the two root-side groups is randomly split into two values—one for each child of the root—by drawing a pivot between the lower bound of the branch range and the sampled segment length. The two new edges therefore sum to the original unrooted branch, while downstream branches keep their original samples. For unrooted two-taxon datasets, only a single segment is emitted and it is attached to the first taxon mentioned in the topology, leaving the companion tip with an implicit zero-length edge. All other unrooted trees retain the sampled lengths directly.
+Regardless of the requested rootedness, the generator first treats every topology as unrooted and draws independent branch segments from the configured range. These segments cover all edges of the unrooted skeleton. When the configuration is rooted, the default behavior (`tree.split_root_branch: true`) randomly splits the segment that connects the two root-side groups into two values—one for each child of the root—by drawing a pivot between the lower bound of the branch range and the sampled segment length. The two new edges therefore sum to the original unrooted branch, while downstream branches keep their original samples. When `tree.split_root_branch` is set to `false`, rooted trees draw every branch independently from the configured range (no splitting), so the root-side edges are unrelated samples. For unrooted two-taxon datasets, only a single segment is emitted and it is attached to the first taxon mentioned in the topology, leaving the companion tip with an implicit zero-length edge. All other unrooted trees retain the sampled lengths directly.
 
 ## Generate trees and sequences (PhyloXML)
 
@@ -141,20 +141,19 @@ python -m src.xml_parser --config path/to/your/config.yaml
 The parser writes `npy_data/<output_name>.npy` (or to the custom `npy_directory` if specified) with fields:
 
 - `X`: one-hot encoded sequences shaped `[taxa, length, channels]` (gap channel added when indels enabled).
-- `y_br`: branch lengths ordered deterministically for 2–4 taxa (or canonical ordering for larger cases).
+- `y_br`: branch lengths in the fixed 2–4 taxa layouts (rooted doubles edges; unrooted stores only present edges).
 - `branch_mask`: boolean mask for present branches.
 - `y_top`: one-hot topology indicator.
 - `tree_index`: original index from the XML file.
 
 ### Branch representation for NumPy matrices
 
-The parser supports specialized branch vector formats for 2-, 3-, and 4-taxa trees. For these cases, the branch vector `y_br` has length equal to `2 × (2n - 3)` (the number of branches in the unrooted tree times two), with deterministic slot assignments:
+The NumPy writer supports only 2–4 taxa and emits different layouts for rooted versus unrooted datasets:
 
-- **2-taxa**: `[a, b]`
-- **3-taxa**: `[a1, a2, b1, b2, c1, c2]`
-- **4-taxa**: `[a1, a2, b1, b2, c1, c2, d1, d2, i1, i2]`
+- Rooted: branch vectors double each edge to keep a stable ordering regardless of where the root lands. Lengths are 2 (2 taxa), 6 (3 taxa), and 10 (4 taxa). The paired slots for a branch are both populated when the root splits that branch.
+- Unrooted: branch vectors contain only present edges in deterministic order (no doubling). Lengths are 1 (2 taxa), 3 (3 taxa), and 5 (4 taxa). The `branch_mask` marks which slots were filled in the observed tree.
 
-In each case, the `*1` slots correspond to the standard leaf branches (always present), while the `*2` slots hold zero by default. When a tree is rooted on a particular branch, that branch is split into two segments that populate both the `*1` and `*2` slots for the corresponding taxon or internal branch. This ensures consistent ordering regardless of root placement.
+Datasets with more than four taxa are not supported by the NumPy writer.
 
 ## Testing
 

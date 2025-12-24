@@ -41,6 +41,7 @@ class TreeSettings:
     rooted: bool = True
     topologies: tuple[TopologySpec, ...] = field(default_factory=tuple)
     branch_length_distribution: str = "uniform"
+    split_root_branch: bool = True
 
     @property
     def taxa_count(self) -> int:
@@ -151,12 +152,14 @@ class GenerationConfig:
             raise ConfigurationError("'tree.branch_length_distribution' must be a string") from exc
         if distribution != "uniform":
             raise ConfigurationError("Only 'uniform' branch length distribution is currently supported")
+        split_root_branch = bool(tree_payload.get("split_root_branch", True))
         tree_settings = TreeSettings(
             taxa_labels=taxa_labels,
             branch_length_range=(min_branch, max_branch),
             rooted=rooted,
             topologies=parsed_topologies,
             branch_length_distribution=distribution,
+            split_root_branch=split_root_branch,
         )
 
         sequence_payload = _expect_mapping(payload, "sequence")

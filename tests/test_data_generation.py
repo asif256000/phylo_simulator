@@ -572,6 +572,31 @@ def test_branch_length_distribution_validation(tmp_path: Path) -> None:
         GenerationConfig.from_mapping(payload, base_path=tmp_path)
 
 
+def test_split_root_branch_flag_parsing(tmp_path: Path) -> None:
+    payload = {
+        "seed": 12,
+        "tree": {
+            "taxa_labels": ["A", "B", "C"],
+            "branch_length_range": [0.1, 0.3],
+            "rooted": True,
+            "split_root_branch": False,
+            "topologies": ["((A,B),:C)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "generated"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    assert config.tree.split_root_branch is False
+
+
 def test_topology_cycle_even_distribution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     payload = {
         "seed": 9,
@@ -713,6 +738,43 @@ def test_root_split_preserves_total_length(monkeypatch: pytest.MonkeyPatch, tmp_
     assert len(_branch_lengths(tree)) == infer_branch_output_count(3, rooted=True)
 
 
+def test_rooted_no_split_draws_independent_edges(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    payload = {
+        "seed": 5,
+        "tree": {
+            "taxa_labels": ["A", "B", "C"],
+            "branch_length_range": [0.1, 1.0],
+            "rooted": True,
+            "split_root_branch": False,
+            "topologies": ["((A,B),:C)"],
+        },
+        "sequence": {"length": 6, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "generated"},
+    }
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    samples = iter([0.1, 0.2, 0.3, 0.4])
+
+    def fake_sample(self):  # type: ignore[override]
+        return next(samples)
+
+    monkeypatch.setattr(TreeSequenceGenerator, "_sample_branch_length", fake_sample)
+
+    tree, _ = generator._build_tree(topology_override=config.tree.topologies[0])
+
+    lengths = sorted(_branch_lengths(tree))
+    assert len(lengths) == infer_branch_output_count(3, rooted=True)
+    assert lengths == sorted([0.1, 0.2, 0.3, 0.4])
+
+
 def test_unrooted_two_taxa_assigns_single_branch(tmp_path: Path) -> None:
     payload = {
         "seed": 12,
@@ -810,6 +872,27 @@ def test_four_taxa_tree_supports_double_cherries(tmp_path: Path) -> None:
     assert all(0 <= length <= 0.6 for length in lengths)
     assert any(length >= 0.2 for length in lengths)
     assert not tree.rooted
+
+
+def test_phylogeny_stores_newick_metadata(monkeypatch: pytest.MonkeyPatch, generation_config: GenerationConfig) -> None:
+    generator = TreeSequenceGenerator(generation_config)
+
+    monkeypatch.setattr(
+        TreeSequenceGenerator,
+        "_simulate_with_iqtree",
+        lambda self, *args, **kwargs: {
+            "A": "A" * generation_config.sequence.length,
+            "B": "C" * generation_config.sequence.length,
+        },
+    )
+
+    phylogeny, aligned = generator.generate_phylogeny()
+    assert aligned
+    assert phylogeny.other is not None
+    tags = {entry.tag: entry.value for entry in phylogeny.other}
+    assert tags.get("topology") == "(A,:B)"
+    assert tags.get("newick") is not None
+    assert tags["newick"].strip().endswith(";")
 
 
 def test_topology_validation_requires_all_taxa(tmp_path: Path) -> None:

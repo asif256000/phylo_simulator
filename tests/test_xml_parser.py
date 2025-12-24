@@ -219,6 +219,155 @@ def test_branch_mapping_three_taxa(tmp_path: Path) -> None:
     assert record["y_br"].tolist() == pytest.approx([0.1, 0.9, 0.2, 0.0, 0.3, 0.0])
 
 
+def test_branch_mapping_unrooted_two_taxa(tmp_path: Path) -> None:
+    payload = {
+        "seed": 5,
+        "parallel_cores": 1,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_range": [0.1, 0.2],
+            "rooted": False,
+            "topologies": ["(A,B)"]
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "two_unrooted"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    writer = NpyDatasetWriter(config, output_path=tmp_path / "two.npy")
+
+    examples = [
+        TreeExample(
+            tree_index=0,
+            clades=[
+                CladeRecord(name="A", sequence="AAAA", branch_length=0.1),
+                CladeRecord(name="B", sequence="CCCC", branch_length=0.2),
+            ],
+            branches={frozenset(["A"]): 0.1},
+            metadata={"topology": "(A,B)"},
+        )
+    ]
+
+    path = writer.write(examples)
+    record = np.load(path)[0]
+
+    assert record["y_br"].shape == (1,)
+    assert record["branch_mask"].tolist() == [True]
+    assert record["y_br"].tolist() == pytest.approx([0.1])
+
+
+def test_branch_mapping_unrooted_three_taxa(tmp_path: Path) -> None:
+    payload = {
+        "seed": 5,
+        "parallel_cores": 1,
+        "tree": {
+            "taxa_labels": ["A", "B", "C"],
+            "branch_length_range": [0.1, 0.2],
+            "rooted": False,
+            "topologies": ["(A,(B,C))"]
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "three_unrooted"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    writer = NpyDatasetWriter(config, output_path=tmp_path / "three_unrooted.npy")
+
+    branches = {
+        frozenset(["A"]): 0.1,
+        frozenset(["B"]): 0.2,
+        frozenset(["C"]): 0.3,
+    }
+
+    examples = [
+        TreeExample(
+            tree_index=0,
+            clades=[
+                CladeRecord(name="A", sequence="AAAA", branch_length=0.1),
+                CladeRecord(name="B", sequence="CCCC", branch_length=0.2),
+                CladeRecord(name="C", sequence="GGGG", branch_length=0.3),
+            ],
+            branches=branches,
+            metadata={"topology": "(A,(B,C))"},
+        )
+    ]
+
+    path = writer.write(examples)
+    record = np.load(path)[0]
+
+    assert record["y_br"].shape == (3,)
+    assert record["branch_mask"].tolist() == [True, True, True]
+    assert record["y_br"].tolist() == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_branch_mapping_unrooted_four_taxa(tmp_path: Path) -> None:
+    payload = {
+        "seed": 5,
+        "parallel_cores": 1,
+        "tree": {
+            "taxa_labels": ["A", "B", "C", "D"],
+            "branch_length_range": [0.1, 0.2],
+            "rooted": False,
+            "topologies": ["((A,B),(C,D))"]
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "four_unrooted"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    writer = NpyDatasetWriter(config, output_path=tmp_path / "four_unrooted.npy")
+
+    branches = {
+        frozenset(["A"]): 0.1,
+        frozenset(["B"]): 0.2,
+        frozenset(["C"]): 0.3,
+        frozenset(["D"]): 0.4,
+        frozenset(["A", "B"]): 0.5,
+    }
+
+    examples = [
+        TreeExample(
+            tree_index=0,
+            clades=[
+                CladeRecord(name="A", sequence="AAAA", branch_length=0.1),
+                CladeRecord(name="B", sequence="CCCC", branch_length=0.2),
+                CladeRecord(name="C", sequence="GGGG", branch_length=0.3),
+                CladeRecord(name="D", sequence="TTTT", branch_length=0.4),
+            ],
+            branches=branches,
+            metadata={"topology": "((A,B),(C,D))"},
+        )
+    ]
+
+    path = writer.write(examples)
+    record = np.load(path)[0]
+
+    assert record["y_br"].shape == (5,)
+    assert record["branch_mask"].tolist() == [True, True, True, True, True]
+    assert record["y_br"].tolist() == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5])
+
+
 def test_branch_mapping_four_taxa(tmp_path: Path) -> None:
     payload = {
         "seed": 9,
