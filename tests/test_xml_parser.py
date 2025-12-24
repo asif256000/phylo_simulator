@@ -17,7 +17,8 @@ def config(tmp_path_factory: pytest.TempPathFactory) -> GenerationConfig:
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -133,7 +134,8 @@ def test_write_dataset_uses_gap_channel(tmp_path: Path) -> None:
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["(A,:B)"],
         },
@@ -173,7 +175,8 @@ def test_branch_mapping_three_taxa(tmp_path: Path) -> None:
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["((A,B),:C)"]
         },
@@ -225,7 +228,8 @@ def test_branch_mapping_unrooted_two_taxa(tmp_path: Path) -> None:
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": False,
             "topologies": ["(A,B)"]
         },
@@ -269,7 +273,8 @@ def test_branch_mapping_unrooted_three_taxa(tmp_path: Path) -> None:
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": False,
             "topologies": ["(A,(B,C))"]
         },
@@ -320,7 +325,8 @@ def test_branch_mapping_unrooted_four_taxa(tmp_path: Path) -> None:
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B", "C", "D"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": False,
             "topologies": ["((A,B),(C,D))"]
         },
@@ -374,7 +380,8 @@ def test_branch_mapping_four_taxa(tmp_path: Path) -> None:
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B", "C", "D"],
-            "branch_length_range": [0.1, 0.2],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
             "rooted": True,
             "topologies": ["((A,B),:(C,D))"],
         },
@@ -443,7 +450,8 @@ def test_xml_parser_supports_multi_taxa_shapes(
         "parallel_cores": 1,
         "tree": {
             "taxa_labels": list(taxa_labels),
-            "branch_length_range": [0.2, 0.4],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.2, 0.4]}},
             "rooted": True,
             "topologies": list(topologies),
         },
