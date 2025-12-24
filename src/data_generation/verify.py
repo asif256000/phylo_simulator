@@ -20,6 +20,8 @@ def verify_from_config(config_path: Path | str, *, output_path: Path | None = No
 
     destination = Path(output_path) if output_path else _default_verify_path(xml_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        destination.unlink()
     _write_newick_dump(xml_path, destination)
     return destination
 
