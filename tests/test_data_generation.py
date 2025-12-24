@@ -119,7 +119,7 @@ def test_write_xml_creates_expected_phyloxml(monkeypatch: pytest.MonkeyPatch, ge
         },
     )
 
-    output_path = generator.write_xml()
+    output_path, _ = generator.write_xml()
     assert output_path.exists()
 
     phyloxml_entries = list(Phylo.parse(str(output_path), "phyloxml"))
