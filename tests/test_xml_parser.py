@@ -129,6 +129,91 @@ def test_one_hot_encode_supports_gap_when_enabled() -> None:
         one_hot_encode(sequence, len(sequence))
 
 
+def test_write_dataset_infers_length_for_indels(tmp_path: Path) -> None:
+    payload = {
+        "seed": 3,
+        "parallel_cores": 1,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": True, "rates": [0.05, 0.05]},
+        },
+        "dataset": {"tree_count": 1, "output_name": "indel_inferred"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    parser = XMLParser(config, output_path=tmp_path / "indel_inferred.npy")
+
+    examples = [
+        TreeExample(
+            tree_index=0,
+            clades=[
+                CladeRecord(name="A", sequence="A-AACG", branch_length=0.3),
+                CladeRecord(name="B", sequence="TT-CCA", branch_length=0.4),
+            ],
+            branches={frozenset(["A"]): 0.3, frozenset(["B"]): 0.4},
+            metadata={"topology": "(A,:B)"},
+        )
+    ]
+
+    dataset_path = parser.write_dataset(examples=examples)
+    record = np.load(dataset_path, mmap_mode="r")[0]
+
+    assert record["X"].shape == (2, 6, 5)
+    assert record["branch_mask"].tolist() == [True, True]
+
+
+def test_write_dataset_rejects_length_mismatch_without_indels(tmp_path: Path) -> None:
+    payload = {
+        "seed": 3,
+        "parallel_cores": 1,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {"tree_count": 1, "output_name": "indel_disabled"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    parser = XMLParser(config, output_path=tmp_path / "indel_disabled.npy")
+
+    examples = [
+        TreeExample(
+            tree_index=0,
+            clades=[
+                CladeRecord(name="A", sequence="AAAAAA", branch_length=0.3),
+                CladeRecord(name="B", sequence="TTTTTT", branch_length=0.4),
+            ],
+            branches={frozenset(["A"]): 0.3, frozenset(["B"]): 0.4},
+            metadata={"topology": "(A,:B)"},
+        )
+    ]
+
+    with pytest.raises(ValueError):
+        parser.write_dataset(examples=examples)
+
+
 def test_write_dataset_uses_gap_channel(tmp_path: Path) -> None:
     payload = {
         "seed": 11,
