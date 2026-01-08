@@ -34,6 +34,15 @@ class NpyDatasetWriter(DatasetWriter):
         if example_count == 0:
             raise ValueError("No usable phylogenies were found in the input file")
 
+        inferred_length = _infer_sequence_length(examples)
+        sequence_length = inferred_length if self.include_gap_channel else self.sequence_length
+
+        if not self.include_gap_channel and sequence_length != self.sequence_length:
+            raise ValueError(
+                "Sequences do not match configured length and indels are disabled: "
+                f"expected {self.sequence_length}, observed {sequence_length}"
+            )
+
         output_path = self.output_path or self.config.dataset.output_npy_path()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         if output_path.exists():
@@ -41,7 +50,7 @@ class NpyDatasetWriter(DatasetWriter):
 
         dtype = np.dtype(
             [
-                ("X", np.uint8, (len(self.clade_names), self.sequence_length, self.channel_count)),
+                ("X", np.uint8, (len(self.clade_names), sequence_length, self.channel_count)),
                 ("y_br", np.float32, (self.num_branches,)),
                 ("branch_mask", np.bool_, (self.num_branches,)),
                 ("y_top", np.float32, (self.num_topologies,)),
@@ -61,7 +70,7 @@ class NpyDatasetWriter(DatasetWriter):
                 row_index,
                 example,
                 self.clade_names,
-                self.sequence_length,
+                sequence_length,
                 self.channel_count,
                 self.include_gap_channel,
                 self.use_special_branch_order,
@@ -153,6 +162,22 @@ def _encode_example(
             y_top[topology_map[topo_str]] = 1.0
 
     return row_index, example.tree_index, encoded, y_br, branch_mask, y_top
+
+
+def _infer_sequence_length(examples: Sequence[TreeExample]) -> int:
+    lengths: set[int] = set()
+    for example in examples:
+        for clade in example.clades:
+            lengths.add(len(clade.sequence))
+
+    if not lengths:
+        raise ValueError("Unable to infer sequence length from empty example list")
+
+    if len(lengths) > 1:
+        observed = ", ".join(str(length) for length in sorted(lengths))
+        raise ValueError(f"Examples contain inconsistent sequence lengths: {observed}")
+
+    return lengths.pop()
 
 
 def _branch_vector_length(
