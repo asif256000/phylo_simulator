@@ -17,14 +17,16 @@ pip install -r requirements.txt
 
 ## Configure generation
 
-Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). The generator currently targets datasets with two, three, or four taxa. Key fields:
+Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). The generator currently targets datasets with two, three, or four taxa. **For comprehensive documentation of all configuration fields, defaults, and constraints, see [CONFIG.md](CONFIG.md).**
+
+Key fields:
 
 - `seed`: RNG seed for reproducibility.
 - `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), optional `split_root_branch` (defaults to `true`; when `false`, rooted trees draw both root edges independently instead of splitting the unrooted connector), and a required `topologies` list describing permitted tree structures.
 - `sequence`: sequence length and substitution model.
 - `simulation`: backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
 - `dataset`: number of trees to simulate (`tree_count`) and the output file basename (`output_name`, no extension). By default, files are written to `xml_data/<output_name>.xml` and `npy_data/<output_name>.npy`. Optionally specify custom directories with `xml_directory` and `npy_directory` (see Custom Output Directories below).
-- `parallel_cores`: controls the level of multiprocessing/threading used during tree generation and dataset encoding. Set to `1` to disable parallelism when debugging.
+- `parallel_cores`: controls the level of multiprocessing/threading used during tree generation and dataset encoding. Defaults to `0` (auto-detect all available CPU cores). Set to `1` to disable parallelism when debugging.
 
 ### Custom Output Directories
 
