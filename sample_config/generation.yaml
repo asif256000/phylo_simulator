@@ -2,7 +2,7 @@
 # Copy one of these blocks to config/generation.yaml (or another file) and adjust paths as needed.
 
 ---
-# Minimal IQ-TREE based configuration for two taxa
+# Minimal IQ-TREE based configuration for two taxa with uniform distribution
 seed: 123
 parallel_cores: 2
 
@@ -10,8 +10,11 @@ tree:
   taxa_labels:
     - A
     - B
-  branch_length_range: [0.1, 1.0]
-  branch_length_distribution: uniform
+  branch_length_distributions:
+    uniform: 1.0
+  branch_length_params:
+    uniform:
+      range: [0.1, 1.0]
   rooted: true
   split_root_branch: true
   topologies:
@@ -39,7 +42,7 @@ dataset:
   # npy_directory: "/path/to/custom/npy/directory"
 
 ---
-# Seq-Gen example with custom HKY parameters
+# Seq-Gen example with exponential distribution
 seed: 31415
 parallel_cores: 2
 
@@ -47,8 +50,11 @@ tree:
   taxa_labels:
     - taxon_1
     - taxon_2
-  branch_length_range: [0.05, 0.5]
-  branch_length_distribution: uniform
+  branch_length_distributions:
+    exponential: 1.0
+  branch_length_params:
+    exponential:
+      rate: 2.0
   rooted: true
   split_root_branch: true
   topologies:
@@ -78,7 +84,8 @@ dataset:
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
 
-# Three-taxa configuration that enables indels (gap channel recorded in the dataset)
+---
+# Three-taxa configuration with mixture of uniform and exponential distributions (enables indels)
 seed: 98765
 parallel_cores: 2
 
@@ -87,8 +94,14 @@ tree:
     - A
     - B
     - C
-  branch_length_range: [0.1, 0.9]
-  branch_length_distribution: uniform
+  branch_length_distributions:
+    uniform: 0.7
+    exponential: 0.3
+  branch_length_params:
+    uniform:
+      range: [0.1, 0.9]
+    exponential:
+      rate: 1.5
   rooted: true
   split_root_branch: true
   topologies:
@@ -116,7 +129,7 @@ dataset:
   # npy_directory: "/path/to/custom/npy/directory"
 
 ---
-# Four-taxa configuration with paired cherries on each side of the internal branch
+# Four-taxa configuration with truncated exponential distribution
 seed: 24680
 parallel_cores: 4
 
@@ -126,8 +139,13 @@ tree:
     - t2
     - t3
     - t4
-  branch_length_range: [0.2, 0.8]
-  branch_length_distribution: uniform
+  branch_length_distributions:
+    truncated_exponential: 1.0
+  branch_length_params:
+    truncated_exponential:
+      rate: 3.0
+      min: 0.05
+      max: 0.8
   rooted: true
   split_root_branch: false
   topologies:
@@ -152,7 +170,7 @@ dataset:
   output_name: "four_taxa_example"
 
 ---
-# Unrooted quartet (Seq-Gen) showcasing colon-free topology definitions
+# Unrooted quartet (Seq-Gen) with mixed distribution: uniform and truncated exponential
 seed: 13579
 parallel_cores: 2
 
@@ -162,8 +180,16 @@ tree:
     - p2
     - p3
     - p4
-  branch_length_range: [0.15, 0.6]
-  branch_length_distribution: uniform
+  branch_length_distributions:
+    uniform: 0.6
+    truncated_exponential: 0.4
+  branch_length_params:
+    uniform:
+      range: [0.15, 0.6]
+    truncated_exponential:
+      rate: 2.0
+      min: 0.1
+      max: 0.5
   rooted: false
   split_root_branch: true
   topologies:
@@ -192,7 +218,7 @@ dataset:
 
 ---
 # Auto-detect available CPU cores for parallelization (set parallel_cores to 0)
-# This configuration will automatically use all available cores for tree generation
+# This configuration demonstrates all three distribution types in a single mixture
 seed: 555
 parallel_cores: 0  # Auto-detect all available CPU cores
 
@@ -201,8 +227,19 @@ tree:
     - Species_A
     - Species_B
     - Species_C
-  branch_length_range: [0.08, 0.7]
-  branch_length_distribution: uniform
+  branch_length_distributions:
+    uniform: 0.4
+    exponential: 0.35
+    truncated_exponential: 0.25
+  branch_length_params:
+    uniform:
+      range: [0.08, 0.7]
+    exponential:
+      rate: 1.2
+    truncated_exponential:
+      rate: 2.5
+      min: 0.02
+      max: 0.6
   rooted: true
   split_root_branch: true
   topologies:

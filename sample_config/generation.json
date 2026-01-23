@@ -1,12 +1,18 @@
 [
   {
-    "description": "Minimal IQ-TREE based configuration for two taxa",
+    "description": "Minimal IQ-TREE based configuration for two taxa with uniform distribution",
     "seed": 123,
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["A", "B"],
-      "branch_length_range": [0.1, 1.0],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {
+        "uniform": 1.0
+      },
+      "branch_length_params": {
+        "uniform": {
+          "range": [0.1, 1.0]
+        }
+      },
       "rooted": true,
       "split_root_branch": true,
       "topologies": ["(A,:B)"]
@@ -27,19 +33,23 @@
     },
     "dataset": {
       "tree_count": 100,
-      "output_name": "generated_trees",
-      "xml_directory": null,
-      "npy_directory": null
+      "output_name": "generated_trees"
     }
   },
   {
-    "description": "Seq-Gen example with custom HKY parameters",
+    "description": "Seq-Gen example with exponential distribution",
     "seed": 31415,
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["taxon_1", "taxon_2"],
-      "branch_length_range": [0.05, 0.5],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {
+        "exponential": 1.0
+      },
+      "branch_length_params": {
+        "exponential": {
+          "rate": 2.0
+        }
+      },
       "rooted": true,
       "split_root_branch": true,
       "topologies": ["(taxon_1,:taxon_2)"]
@@ -64,19 +74,27 @@
     },
     "dataset": {
       "tree_count": 50,
-      "output_name": "seqgen_dataset",
-      "xml_directory": null,
-      "npy_directory": null
+      "output_name": "seqgen_dataset"
     }
   },
   {
-    "description": "Three-taxa configuration with indels enabled (gap channel recorded)",
+    "description": "Three-taxa configuration with mixture of uniform and exponential distributions (indels enabled)",
     "seed": 98765,
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["A", "B", "C"],
-      "branch_length_range": [0.1, 0.9],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {
+        "uniform": 0.7,
+        "exponential": 0.3
+      },
+      "branch_length_params": {
+        "uniform": {
+          "range": [0.1, 0.9]
+        },
+        "exponential": {
+          "rate": 1.5
+        }
+      },
       "rooted": true,
       "split_root_branch": true,
       "topologies": ["((A,B),:C)", "((A,C),:B)"]
@@ -97,19 +115,25 @@
     },
     "dataset": {
       "tree_count": 25,
-      "output_name": "three_taxa_example",
-      "xml_directory": null,
-      "npy_directory": null
+      "output_name": "three_taxa_example"
     }
   },
   {
-    "description": "Four-taxa configuration with paired cherries",
+    "description": "Four-taxa configuration with truncated exponential distribution",
     "seed": 24680,
     "parallel_cores": 4,
     "tree": {
       "taxa_labels": ["t1", "t2", "t3", "t4"],
-      "branch_length_range": [0.2, 0.8],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {
+        "truncated_exponential": 1.0
+      },
+      "branch_length_params": {
+        "truncated_exponential": {
+          "rate": 3.0,
+          "min": 0.05,
+          "max": 0.8
+        }
+      },
       "rooted": true,
       "split_root_branch": false,
       "topologies": ["((t1,t2),:(t3,t4))", "((t1,t3),:(t2,t4))"]
@@ -130,19 +154,29 @@
     },
     "dataset": {
       "tree_count": 40,
-      "output_name": "four_taxa_example",
-      "xml_directory": null,
-      "npy_directory": null
+      "output_name": "four_taxa_example"
     }
   },
   {
-    "description": "Unrooted quartet (Seq-Gen backend)",
+    "description": "Unrooted quartet (Seq-Gen) with mixed uniform and truncated exponential",
     "seed": 13579,
     "parallel_cores": 2,
     "tree": {
       "taxa_labels": ["p1", "p2", "p3", "p4"],
-      "branch_length_range": [0.15, 0.6],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {
+        "uniform": 0.6,
+        "truncated_exponential": 0.4
+      },
+      "branch_length_params": {
+        "uniform": {
+          "range": [0.15, 0.6]
+        },
+        "truncated_exponential": {
+          "rate": 2.0,
+          "min": 0.1,
+          "max": 0.5
+        }
+      },
       "rooted": false,
       "split_root_branch": true,
       "topologies": [
@@ -170,20 +204,34 @@
     },
     "dataset": {
       "tree_count": 60,
-      "output_name": "unrooted_quartet",
-      "xml_directory": null,
-      "npy_directory": null
+      "output_name": "unrooted_quartet"
     }
   },
   {
-    "description": "Auto-detect available CPU cores for parallelization",
+    "description": "Auto-detect available CPU cores with all three distribution types in mixture",
     "comment": "Set parallel_cores to 0 to automatically use all available CPU cores",
     "seed": 555,
     "parallel_cores": 0,
     "tree": {
       "taxa_labels": ["Species_A", "Species_B", "Species_C"],
-      "branch_length_range": [0.08, 0.7],
-      "branch_length_distribution": "uniform",
+      "branch_length_distributions": {
+        "uniform": 0.4,
+        "exponential": 0.35,
+        "truncated_exponential": 0.25
+      },
+      "branch_length_params": {
+        "uniform": {
+          "range": [0.08, 0.7]
+        },
+        "exponential": {
+          "rate": 1.2
+        },
+        "truncated_exponential": {
+          "rate": 2.5,
+          "min": 0.02,
+          "max": 0.6
+        }
+      },
       "rooted": true,
       "split_root_branch": true,
       "topologies": ["((Species_A,Species_B),:Species_C)", "((Species_A,Species_C),:Species_B)"]
@@ -204,9 +252,7 @@
     },
     "dataset": {
       "tree_count": 200,
-      "output_name": "auto_parallel_dataset",
-      "xml_directory": null,
-      "npy_directory": null
+      "output_name": "auto_parallel_dataset"
     }
   }
 ]
