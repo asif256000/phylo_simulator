@@ -64,7 +64,7 @@ This generates `npy_data/<output_name>.npy` with structured arrays ready for mac
 Generates phylogenetic trees and aligned sequences in PhyloXML format. Features:
 
 - Configurable tree topologies (rooted or unrooted)
-- Branch length distributions
+- Branch length distributions (single or mixture of uniform and exponential)
 - Multiple sequence simulation backends (IQ-TREE, Seq-Gen)
 - Indel simulation
 - Automatic parallelization across available CPU cores
