@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import warnings
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
@@ -354,13 +355,16 @@ class GenerationConfig:
             npy_directory=npy_directory,
         )
 
-        parallel_raw = payload.get("parallel_cores", 1)
+        parallel_raw = payload.get("parallel_cores", 0)
         try:
             parallel_cores = int(parallel_raw)
         except (TypeError, ValueError) as exc:
             raise ConfigurationError("'parallel_cores' must be an integer") from exc
-        if parallel_cores <= 0:
-            raise ConfigurationError("'parallel_cores' must be a positive integer")
+        if parallel_cores < 0:
+            raise ConfigurationError("'parallel_cores' must be a non-negative integer")
+        if parallel_cores == 0:
+            detected = os.cpu_count()
+            parallel_cores = detected if detected and detected > 0 else 1
 
         return GenerationConfig(
             seed=seed,

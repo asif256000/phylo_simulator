@@ -255,3 +255,42 @@ simulation:
 dataset:
   tree_count: 30
   output_name: "truncated_exp_example"
+
+---
+# Auto-detect available CPU cores for parallelization (set parallel_cores to 0)
+# This configuration will automatically use all available cores for tree generation
+seed: 555
+parallel_cores: 0  # Auto-detect all available CPU cores
+
+tree:
+  taxa_labels:
+    - Species_A
+    - Species_B
+    - Species_C
+  branch_length_range: [0.08, 0.7]
+  branch_length_distribution: uniform
+  rooted: true
+  split_root_branch: true
+  topologies:
+    - "((Species_A,Species_B),:Species_C)"
+    - "((Species_A,Species_C),:Species_B)"
+
+sequence:
+  length: 1500
+  model: GTR
+
+simulation:
+  backend: iqtree
+  iqtree_path: "/absolute/path/to/iqtree3"
+  seqgen_path: "/absolute/path/to/seq-gen"
+  seqgen_kwargs: {}
+  indel:
+    enabled: false
+    rates: null
+
+dataset:
+  tree_count: 200
+  output_name: "auto_parallel_dataset"
+  # Optional: Specify custom directories for XML and NPY output
+  # xml_directory: "/path/to/custom/xml/directory"
+  # npy_directory: "/path/to/custom/npy/directory"
