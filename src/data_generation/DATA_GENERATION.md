@@ -53,7 +53,24 @@ Rules:
 
 ### Branch Lengths
 
-The generator first treats every topology as unrooted and draws independent branch segments from the configured `branch_length_range`.
+The generator first treats every topology as unrooted and draws independent branch segments from the configured `branch_length_range` or mixture of distributions.
+
+**Distribution options**:
+- **Single distribution** (legacy): Use `branch_length_distribution` (uniform, exponential, etc.) with `branch_length_range` parameters.
+- **Mixture distributions** (recommended): Use `branch_length_distributions` (mapping of distribution names to weights) with `branch_length_params` for per-distribution parameters. Supported: `uniform` (with `range` parameter) and `exponential` (with `rate` parameter).
+
+Example mixture with 70% uniform and 30% exponential:
+```yaml
+tree:
+  branch_length_distributions:
+    uniform: 0.7
+    exponential: 0.3
+  branch_length_params:
+    uniform:
+      range: [0.0, 0.1]
+    exponential:
+      rate: 10.0
+```
 
 **When rooted** (`tree.rooted: true`) **with default split behavior** (`tree.split_root_branch: true`):
 - The root branch segment is split into two child edges.
