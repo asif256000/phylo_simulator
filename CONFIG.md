@@ -83,7 +83,7 @@ tree:
 **Type**: List or tuple of two floats  
 **Required**: No  
 **Default**: `[0.1, 1.0]`  
-**Description**: The range from which branch lengths are independently sampled. Specified as `[minimum, maximum]`. Each branch in the unrooted tree skeleton receives a length uniformly sampled from this range.
+**Description**: Baseline range for branch lengths. Used directly when sampling from a uniform distribution, and as the fallback uniform range when mixture parameters omit a custom range.
 
 **Constraints**:
 - Must contain exactly two values
@@ -92,8 +92,8 @@ tree:
 - Maximum must be ≥ minimum
 
 **Important Notes**:
-- When `tree.rooted: true` and `tree.split_root_branch: true` (the default), the root branch connecting the two root-side groups is split into two child branches. The split uses a pivot point drawn uniformly between the minimum bound and the sampled segment length, so both resulting edges are positive but sum to the original sample.
-- When `tree.rooted: true` and `tree.split_root_branch: false`, all branches (including root-side edges) are drawn independently from the range.
+- When `tree.rooted: true` and `tree.split_root_branch: true` (the default), the root branch is split into two child branches using a pivot drawn uniformly between the minimum bound and the sampled segment length; the child edges sum to the original sample.
+- When `tree.rooted: true` and `tree.split_root_branch: false`, all branches (including root-side edges) are drawn independently from the configured distribution.
 - For unrooted two-taxon trees, only one segment is generated and attached to the first taxon; the second taxon receives an implicit zero-length edge.
 
 **Example**:
@@ -104,7 +104,7 @@ tree:
 
 ---
 
-### `tree.branch_length_distribution`
+### `tree.branch_length_distribution` (legacy)
 
 **Type**: String  
 **Required**: No  
@@ -122,6 +122,54 @@ tree:
 ```yaml
 tree:
   branch_length_distribution: uniform
+```
+
+---
+
+### `tree.branch_length_distributions`
+
+**Type**: Mapping  
+**Required**: No  
+**Default**: `null`  
+**Description**: Mixture of branch length distributions with weights.
+
+**Supported Distributions**:
+- `uniform` - Uniform distribution
+- `exponential` - Exponential distribution
+
+**Example**:
+```yaml
+tree:
+  branch_length_distributions:
+    uniform: 0.7
+    exponential: 0.3
+```
+
+---
+
+### `tree.branch_length_params`
+
+**Type**: Mapping  
+**Required**: No  
+**Default**: `{}`
+
+**Description**: Distribution-specific parameters.
+
+**Supported Parameters**:
+- **uniform**: `range: [min, max]`
+- **exponential**: `rate: <positive>`
+
+**Example**:
+```yaml
+tree:
+  branch_length_distributions:
+    uniform: 0.6
+    exponential: 0.4
+  branch_length_params:
+    uniform:
+      range: [0.05, 0.8]
+    exponential:
+      rate: 5.0
 ```
 
 ---
@@ -623,6 +671,8 @@ The configuration parser performs extensive validation and raises `Configuration
 | `parallel_cores` | `0` (auto-detect all cores) |
 | `tree.branch_length_range` | `[0.1, 1.0]` |
 | `tree.branch_length_distribution` | `"uniform"` |
+| `tree.branch_length_distributions` | `null` (not used if legacy distribution specified) |
+| `tree.branch_length_params` | `null` (uses distribution-specific defaults) |
 | `tree.rooted` | `true` |
 | `tree.split_root_branch` | `true` |
 | `sequence.length` | `1000` |
