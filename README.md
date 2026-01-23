@@ -5,157 +5,109 @@ Phylo Simulator generates phylogenetic trees and aligned sequences, writes them 
 ## Setup
 
 1. Use Python 3.10+ and create an isolated environment (`venv` or Conda recommended).
-2. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
+2. Install dependencies: `pip install -r requirements.txt`
 3. Install an external sequence simulator (required for data generation):
    - [IQ-TREE](http://www.iqtree.org/)
    - [Seq-Gen](http://tree.bio.ed.ac.uk/software/seqgen/)
 
-## Configure generation
+## Quick Start
 
-Simulation inputs live in YAML or JSON configuration files (templates available in `sample_config/generation.{yaml,json}`). The generator currently targets datasets with two, three, or four taxa. **For comprehensive documentation of all configuration fields, defaults, and constraints, see [CONFIG.md](CONFIG.md).**
+### 1. Configure Generation
 
-Key fields:
-
-- `seed`: RNG seed for reproducibility.
-- `tree`: taxa labels, branch length range (applied per branch), rootedness flag, optional `branch_length_distribution` (currently only `uniform`), optional `split_root_branch` (defaults to `true`; when `false`, rooted trees draw both root edges independently instead of splitting the unrooted connector), and a required `topologies` list describing permitted tree structures.
-- `sequence`: sequence length and substitution model.
-- `simulation`: backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
-- `dataset`: number of trees to simulate (`tree_count`) and the output file basename (`output_name`, no extension). By default, files are written to `xml_data/<output_name>.xml` and `npy_data/<output_name>.npy`. Optionally specify custom directories with `xml_directory` and `npy_directory` (see Custom Output Directories below).
-- `parallel_cores`: controls the level of multiprocessing/threading used during tree generation and dataset encoding. Defaults to `0` (auto-detect all available CPU cores). Set to `1` to disable parallelism when debugging.
-
-### Custom Output Directories
-
-By default, generated files are saved to `xml_data/` and `npy_data/` directories relative to the configuration file location. You can override these defaults by specifying custom paths in your configuration:
+Create a configuration file in YAML or JSON (see templates in `sample_config/generation.{yaml,json}`):
 
 ```yaml
+seed: 42
+parallel_cores: 0  # Auto-detect available cores
+
+tree:
+  taxa_labels: [A, B, C]
+  branch_length_range: [0.1, 0.9]
+  topologies:
+    - "((A,B),:C)"
+
+sequence:
+  length: 1000
+  model: JC
+
+simulation:
+  backend: iqtree
+  iqtree_path: "/path/to/iqtree3"
+
 dataset:
   tree_count: 100
-  output_name: "generated_trees"
-  xml_directory: "/absolute/path/to/xml/output"  # Optional
-  npy_directory: "/absolute/path/to/npy/output"  # Optional
+  output_name: "my_dataset"
 ```
 
-Or in JSON:
+For all available configuration options, see [CONFIG.md](CONFIG.md) or the [Data Generation Module documentation](src/data_generation/DATA_GENERATION.md).
 
-```json
-{
-  "dataset": {
-    "tree_count": 100,
-    "output_name": "generated_trees",
-    "xml_directory": "/absolute/path/to/xml/output",
-    "npy_directory": "/absolute/path/to/npy/output"
-  }
-}
-```
-
-When custom directories are specified, all output files (including verify outputs) use those locations. If omitted, the default `xml_data/` and `npy_data/` directories are used.
-
-### Topology strings
-
-Provide one or more entries under `tree.topologies` for every configuration. Each entry must be written as a binary Newick fragment. When `tree.rooted` is `true`, wrap the two root children in parentheses and prefix exactly one child with `:` to mark the edge that carries the root—for instance, `((A,B),:C)` separates the `(A,B)` cherry from the rooted leaf `C`, and `(A,:(B,(C,D)))` represents `A` opposite a subtree where `B` splits before the cherry `(C,D)`. When `tree.rooted` is `false`, omit `:` entirely and use standard Newick notation such as `((p1,p2),(p3,p4))`. Inside each child, only single taxa or cherries like `(taxon_1,taxon_2)` are permitted, and every topology must reference each configured taxon exactly once. The generator cycles through the supplied strings to keep datasets evenly distributed, and the literal topology (including any root marker) is stored as a `<topology>` metadata entry.
-
-### Branch lengths
-
-Regardless of the requested rootedness, the generator first treats every topology as unrooted and draws independent branch segments from the configured range. These segments cover all edges of the unrooted skeleton. When the configuration is rooted, the default behavior (`tree.split_root_branch: true`) randomly splits the segment that connects the two root-side groups into two values—one for each child of the root—by drawing a pivot between the lower bound of the branch range and the sampled segment length. The two new edges therefore sum to the original unrooted branch, while downstream branches keep their original samples. When `tree.split_root_branch` is set to `false`, rooted trees draw every branch independently from the configured range (no splitting), so the root-side edges are unrelated samples. For unrooted two-taxon datasets, only a single segment is emitted and it is attached to the first taxon mentioned in the topology, leaving the companion tip with an implicit zero-length edge. All other unrooted trees retain the sampled lengths directly.
-
-## Generate trees and sequences (PhyloXML)
-
-```bash
-python -m src.data_generation --config path/to/your/config.yaml
-```
-
-For example, using the sample configuration:
+### 2. Generate Trees and Sequences
 
 ```bash
 python -m src.data_generation --config config/generation.yaml
 ```
 
-This writes `xml_data/<output_name>.xml` (or to the custom `xml_directory` if specified) containing the simulated phylogenies and sequences.
+This generates `xml_data/<output_name>.xml` containing your phylogenies and sequences.
 
-## Optional: verify Newick dumps
-
-```bash
-python -m src.data_generation.verify --config path/to/your/config.yaml
-```
-
-This emits `<xml_directory>/verify/<output_name>.txt` (where `<xml_directory>` is either the default `xml_data/` or your custom directory) with one Newick tree per line for quick inspection.
-
-Programmatic use is also available:
-
-```python
-from src.data_generation import verify_from_config
-
-verify_from_config("path/to/your/config.yaml")
-```
-
-Each invocation overwrites the corresponding `<xml_directory>/verify/<output_name>.txt` file with one Newick tree per line.
-
-## Optional: export sequences to FASTA
+### 3. Parse to NumPy
 
 ```bash
-python -m src.data_generation.verify_sequences --config path/to/your/config.yaml
+python -m src.xml_parser --config config/generation.yaml
 ```
 
-This emits `<xml_directory>/verify/<output_name>_sequences.fasta` (where `<xml_directory>` is either the default `xml_data/` or your custom directory) containing all sequences from the PhyloXML dataset in FASTA format. The output location is automatically determined from the configuration file.
+This generates `npy_data/<output_name>.npy` with structured arrays ready for machine learning.
 
-### FASTA format
+## Modules
 
-The FASTA file includes sequences for all trees and all taxa in the order they appear in the configuration. Each sequence header includes the taxon label suffixed with an underscore and the tree index (1-based) to avoid duplicate taxa identifiers. For example, with taxa labels `[A, B, C]` and 2 trees, the output structure is:
+### [Data Generation](src/data_generation/DATA_GENERATION.md)
 
-```
->A_1
-ATGCATGCATGC...
->B_1
-GCTAGCTAGCTA...
->C_1
-TTAAATTAAATT...
->A_2
-ATGCATGCATGC...
->B_2
-GCTAGCTAGCTA...
->C_2
-TTAAATTAAATT...
-```
+Generates phylogenetic trees and aligned sequences in PhyloXML format. Features:
 
-Each sequence entry corresponds to a single alignment from a single tree. Sequences are written sequentially in tree order, and within each tree, in the order of the configured taxa labels.
+- Configurable tree topologies (rooted or unrooted)
+- Branch length distributions
+- Multiple sequence simulation backends (IQ-TREE, Seq-Gen)
+- Indel simulation
+- Automatic parallelization across available CPU cores
+- Verification and export utilities
 
-Programmatic use is also available:
-
-```python
-from src.data_generation import verify_sequences_from_config
-
-verify_sequences_from_config("path/to/your/config.yaml")
-```
-
-Each invocation overwrites the corresponding `<xml_directory>/verify/<output_name>_sequences.fasta` file.
-
-## Parse PhyloXML to NumPy
-
+**Quick commands**:
 ```bash
-python -m src.xml_parser --config path/to/your/config.yaml
+python -m src.data_generation --config config.yaml  # Generate trees
+python -m src.data_generation.verify --config config.yaml  # Export Newick
+python -m src.data_generation.verify_sequences --config config.yaml  # Export FASTA
 ```
 
-The parser writes `npy_data/<output_name>.npy` (or to the custom `npy_directory` if specified) with fields:
+### [XML Parser](src/xml_parser/XML_PARSER.md)
 
-- `X`: one-hot encoded sequences shaped `[taxa, length, channels]` (gap channel added when indels enabled).
-- `y_br`: branch lengths in the fixed 2–4 taxa layouts (rooted doubles edges; unrooted stores only present edges).
-- `branch_mask`: boolean mask for present branches.
-- `y_top`: one-hot topology indicator.
-- `tree_index`: original index from the XML file.
+Parses PhyloXML files and converts to NumPy arrays. Features:
 
-### Branch representation for NumPy matrices
+- Sequence one-hot encoding
+- Branch length extraction
+- Topology encoding
+- Support for 2–4 taxa datasets
+- Gap channel for indel-enabled datasets
 
-The NumPy writer supports only 2–4 taxa and emits different layouts for rooted versus unrooted datasets:
+**Quick command**:
+```bash
+python -m src.xml_parser --config config.yaml  # Parse XML to NumPy
+```
 
-- Rooted: branch vectors double each edge to keep a stable ordering regardless of where the root lands. Lengths are 2 (2 taxa), 6 (3 taxa), and 10 (4 taxa). The paired slots for a branch are both populated when the root splits that branch.
-- Unrooted: branch vectors contain only present edges in deterministic order (no doubling). Lengths are 1 (2 taxa), 3 (3 taxa), and 5 (4 taxa). The `branch_mask` marks which slots were filled in the observed tree.
+### Utils
 
-Datasets with more than four taxa are not supported by the NumPy writer.
+Utility functions for phylogenetic operations (topology formatting, encoding, etc.).
+
+## Configuration
+
+For comprehensive documentation of all configuration fields and options, see [CONFIG.md](CONFIG.md).
+
+Key highlights:
+
+- **`seed`**: Reproducibility control
+- **`parallel_cores`**: Defaults to `0` (auto-detect all cores); set to `1` for single-threaded debugging
+- **`tree`**: Taxa labels, branch length range, rooted/unrooted, topologies
+- **`sequence`**: Sequence length and evolutionary model
+- **`simulation`**: Backend choice, executable paths, optional parameters
+- **`dataset`**: Output count and naming
 
 ## Testing
 
@@ -164,5 +116,32 @@ Run the test suite:
 ```bash
 pytest
 ```
+
+Tests cover tree/sequence generation workflows, XML parsing, dataset encoding, and utility functions.
+
+## Workflow
+
+The typical phylogenetic data generation and parsing workflow:
+
+```
+1. Create config.yaml (or use sample from sample_config/)
+              ↓
+2. python -m src.data_generation --config config.yaml
+   (generates xml_data/<name>.xml)
+              ↓
+3. [Optional] python -m src.data_generation.verify --config config.yaml
+   (verify Newick trees)
+              ↓
+4. python -m src.xml_parser --config config.yaml
+   (generates npy_data/<name>.npy)
+              ↓
+5. Load and use: data = np.load("npy_data/<name>.npy")
+```
+
+## Documentation Structure
+
+- **[CONFIG.md](CONFIG.md)** - Complete configuration field reference
+- **[DATA_GENERATION.md](src/data_generation/DATA_GENERATION.md)** - Tree and sequence generation details
+- **[XML_PARSER.md](src/xml_parser/XML_PARSER.md)** - NumPy conversion and output format
 
 Tests cover tree/sequence generation workflows, XML parsing, dataset encoding, and one-hot encoding utilities.
