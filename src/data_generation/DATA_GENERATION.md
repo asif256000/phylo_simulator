@@ -13,7 +13,7 @@ Simulation inputs are specified in YAML or JSON configuration files. Templates a
 The configuration file contains five main sections:
 
 - **`seed`**: RNG seed for reproducibility.
-- **`tree`**: Taxa labels, branch length range, rootedness flag, optional `branch_length_distribution`, optional `split_root_branch`, and required `topologies`.
+- **`tree`**: Taxa labels, branch length distributions with weights, distribution-specific parameters, rootedness flag, optional `split_root_branch`, and required `topologies`.
 - **`sequence`**: Sequence length and substitution model.
 - **`simulation`**: Backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
 - **`dataset`**: Number of trees to simulate (`tree_count`) and output file basename (`output_name`).
@@ -53,36 +53,50 @@ Rules:
 
 ### Branch Lengths
 
-The generator first treats every topology as unrooted and draws independent branch segments from the configured `branch_length_range` or mixture of distributions.
+The generator assigns **one distribution per tree** based on the configured weights, then balances the number of trees per distribution across all topologies. This may increase the total number of trees beyond `dataset.tree_count` to keep sampling balanced.
 
-**Distribution options**:
-- **Single distribution** (legacy): Use `branch_length_distribution` (uniform, exponential, etc.) with `branch_length_range` parameters.
-- **Mixture distributions** (recommended): Use `branch_length_distributions` (mapping of distribution names to weights) with `branch_length_params` for per-distribution parameters. Supported: `uniform` (with `range` parameter) and `exponential` (with `rate` parameter).
+**Supported Distributions**:
+- **`uniform`**: Sample uniformly from a specified range `[min, max]`
+- **`exponential`**: Sample from an exponential distribution with rate parameter λ
+- **`truncated_exponential`**: Sample from an exponential distribution truncated to a bounded range `[min, max]`
 
-Example mixture with 70% uniform and 30% exponential:
+**Configuration**:
 ```yaml
 tree:
   branch_length_distributions:
-    uniform: 0.7
+    uniform: 0.5
     exponential: 0.3
+    truncated_exponential: 0.2
   branch_length_params:
     uniform:
       range: [0.0, 0.1]
     exponential:
       rate: 10.0
+    truncated_exponential:
+      rate: 5.0
+      min: 0.01
+      max: 0.5
 ```
 
-**When rooted** (`tree.rooted: true`) **with default split behavior** (`tree.split_root_branch: true`):
-- The root branch segment is split into two child edges.
-- A pivot point is drawn uniformly between the minimum branch length and the sampled length.
-- Both child edges are positive and sum to the original sample.
+In this example:
+- 50% of branch lengths are drawn uniformly from [0.0, 0.1]
+- 30% of branch lengths are drawn from an exponential distribution with λ=10
+- 20% of branch lengths are drawn from a truncated exponential (λ=5) bounded by [0.01, 0.5]
 
-**When rooted with independent sampling** (`tree.split_root_branch: false`):
-- Both root-side edges are independently sampled from the range (no splitting).
+**Weight constraints**:
+- All weights must be positive floats
+- All weights must sum to exactly 1.0
+- The parser will validate this during configuration loading
 
-**For unrooted two-taxon trees**:
-- Only a single branch segment is generated and attached to the first taxon.
-- The second taxon receives an implicit zero-length edge.
+**Balancing rules**:
+- For each distribution, the minimum count is $\lceil weight \times tree\_count \rceil$.
+- These counts are split evenly across topologies.
+- If rounding is needed, the total number of generated trees increases.
+
+**Distribution-specific parameters**:
+- **uniform**: Must provide `range: [min, max]` where min ≥ 0, max > 0, max > min
+- **exponential**: Must provide `rate: <positive>` where rate > 0
+- **truncated_exponential**: Must provide `rate: <positive>` and `max: <positive>`; `min` defaults to 0.0 if not specified, must satisfy 0.0 ≤ min < max. Sampling uses the closed-form inverse CDF so values are always within bounds (no rejection/resampling).
 
 ## Generate Trees and Sequences
 
