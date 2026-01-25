@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,7 +16,7 @@ class DatasetWriter(ABC):
     def __init__(self, config: GenerationConfig, output_path: Path | None = None) -> None:
         self.config = config
         self.output_path = output_path
-        self.parallel_cores = max(1, config.parallel_cores)
+        self.parallel_cores = mp.cpu_count() if config.parallel_cores == 0 else max(1, config.parallel_cores)
 
     @abstractmethod
     def write(self, examples: Sequence[TreeExample]) -> Path:
