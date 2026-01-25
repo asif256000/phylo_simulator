@@ -22,7 +22,14 @@ parallel_cores: 0  # Auto-detect available cores
 
 tree:
   taxa_labels: [A, B, C]
-  branch_length_range: [0.1, 0.9]
+  branch_length_distributions:
+    uniform: 0.7
+    exponential: 0.3
+  branch_length_params:
+    uniform:
+      range: [0.1, 0.9]
+    exponential:
+      rate: 1.0
   topologies:
     - "((A,B),:C)"
 
@@ -64,7 +71,7 @@ This generates `npy_data/<output_name>.npy` with structured arrays ready for mac
 Generates phylogenetic trees and aligned sequences in PhyloXML format. Features:
 
 - Configurable tree topologies (rooted or unrooted)
-- Branch length distributions (single or mixture of uniform and exponential)
+- Branch length distributions (mixture of uniform, exponential, and truncated exponential)
 - Multiple sequence simulation backends (IQ-TREE, Seq-Gen)
 - Indel simulation
 - Automatic parallelization across available CPU cores
