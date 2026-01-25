@@ -78,98 +78,81 @@ tree:
 
 ---
 
-### `tree.branch_length_range`
-
-**Type**: List or tuple of two floats  
-**Required**: No  
-**Default**: `[0.1, 1.0]`  
-**Description**: Baseline range for branch lengths. Used directly when sampling from a uniform distribution, and as the fallback uniform range when mixture parameters omit a custom range.
-
-**Constraints**:
-- Must contain exactly two values
-- Minimum value must be ≥ 0
-- Maximum value must be > 0
-- Maximum must be ≥ minimum
-
-**Important Notes**:
-- When `tree.rooted: true` and `tree.split_root_branch: true` (the default), the root branch is split into two child branches using a pivot drawn uniformly between the minimum bound and the sampled segment length; the child edges sum to the original sample.
-- When `tree.rooted: true` and `tree.split_root_branch: false`, all branches (including root-side edges) are drawn independently from the configured distribution.
-- For unrooted two-taxon trees, only one segment is generated and attached to the first taxon; the second taxon receives an implicit zero-length edge.
-
-**Example**:
-```yaml
-tree:
-  branch_length_range: [0.01, 0.5]
-```
-
----
-
-### `tree.branch_length_distribution` (legacy)
-
-**Type**: String  
-**Required**: No  
-**Default**: `"uniform"`  
-**Description**: The probability distribution from which branch lengths are sampled.
-
-**Possible Values**:
-- `"uniform"` - Sample uniformly from `[minimum, maximum]`
-
-**Constraints**:
-- Currently only `"uniform"` is supported
-- Case-insensitive (whitespace is trimmed)
-
-**Example**:
-```yaml
-tree:
-  branch_length_distribution: uniform
-```
-
----
-
 ### `tree.branch_length_distributions`
 
-**Type**: Mapping  
-**Required**: No  
-**Default**: `null`  
-**Description**: Mixture of branch length distributions with weights.
+**Type**: Mapping of distribution name (string) to weight (positive float)  
+**Required**: Yes  
+**Default**: None  
+**Description**: Mixture of branch length distributions with weights. Each weight must be positive, and all weights together must sum to 1.0 (the parser will error if they don't). Distributions are assigned **per tree** using the requested weights, then balanced across configured topologies. The generator may produce more trees than `dataset.tree_count` to ensure equal counts for every topology-distribution combination.
 
 **Supported Distributions**:
-- `uniform` - Uniform distribution
-- `exponential` - Exponential distribution
+- `uniform` - Uniform distribution over a specified range
+- `exponential` - Exponential distribution with specified rate
+- `truncated_exponential` - Exponential distribution truncated to a bounded range
+
+**Weights**:
+- Each weight must be a positive float (> 0)
+- Weights must sum to exactly 1.0
+- Non-integer weights are supported (e.g., 0.33, 0.67)
+
+**Balancing rules**:
+- For each distribution, the minimum count is $\lceil weight \times tree\_count \rceil$.
+- Counts are then distributed evenly across topologies.
+- If equal distribution requires rounding up, the total number of generated trees will increase beyond `dataset.tree_count`.
+
 
 **Example**:
 ```yaml
 tree:
   branch_length_distributions:
-    uniform: 0.7
+    uniform: 0.5
     exponential: 0.3
+    truncated_exponential: 0.2
 ```
-
 ---
-
 ### `tree.branch_length_params`
 
 **Type**: Mapping  
-**Required**: No  
+**Required**: Yes (when `branch_length_distributions` is specified)  
 **Default**: `{}`
 
-**Description**: Distribution-specific parameters.
+**Description**: Distribution-specific parameters. Each distribution listed in `branch_length_distributions` must have corresponding parameters defined here.
 
 **Supported Parameters**:
-- **uniform**: `range: [min, max]`
-- **exponential**: `rate: <positive>`
 
-**Example**:
+#### **uniform**
+- `range: [min, max]` - The range for uniform sampling
+  - Must provide two numeric values
+  - `min` ≥ 0, `max` > 0, `max` > `min`
+  - Example: `range: [0.05, 0.8]`
+
+#### **exponential**
+- `rate: <positive number>` - The λ (lambda) parameter for exponential distribution
+  - Must be a positive float
+  - Example: `rate: 5.0`
+
+#### **truncated_exponential**
+- `rate: <positive number>` - The λ (lambda) parameter
+  - `max: <positive number>` - Upper bound (required)
+  - `min: <non-negative number>` - Lower bound (optional, defaults to 0.0)
+  - Example: `rate: 2.0`, `min: 0.01`, `max: 1.0`
+
+**Example with mixed distributions**:
 ```yaml
 tree:
   branch_length_distributions:
-    uniform: 0.6
-    exponential: 0.4
+    uniform: 0.5
+    exponential: 0.3
+    truncated_exponential: 0.2
   branch_length_params:
     uniform:
       range: [0.05, 0.8]
     exponential:
       rate: 5.0
+    truncated_exponential:
+      rate: 2.0
+      min: 0.01
+      max: 1.0
 ```
 
 ---
@@ -201,7 +184,7 @@ tree:
 **Description**: Applies only when `tree.rooted: true`. Controls how the root branch (the edge connecting the two root-side groups in the unrooted skeleton) is handled:
 
 - `true` (default): The sampled root branch segment is split into two child edges. A pivot point is drawn uniformly between the minimum branch length and the sampled length. The left child gets the pivot value, the right child gets the remainder, ensuring both edges are positive and sum to the original sample.
-- `false`: Both root-side edges are independently sampled from `branch_length_range`, with no relationship between them.
+- `false`: Both root-side edges are independently sampled from the configured distributions, with no relationship between them.
 
 **Possible Values**:
 - `true` - Split the root branch
@@ -280,23 +263,21 @@ The `sequence` section controls sequence simulation parameters.
 **Example**:
 ```yaml
 sequence:
-  length: 500
+  length: 1000
 ```
-
----
 
 ### `sequence.model`
 
 **Type**: String  
-**Required**: No  
-**Default**: `"JC"`  
-**Description**: The evolutionary substitution model to use for sequence simulation. The supported models depend on the chosen simulation backend.
+**Required**: Yes  
+**Default**: `JC`  
+**Description**: Substitution model used for sequence simulation.
 
-**Common Models**:
-- `"JC"` - Jukes-Cantor (simplest model, equal substitution rates)
-- `"HKY"` - Hasegawa-Kishino-Yano (transition/transversion bias)
-- `"GTR"` - General Time Reversible (most general nucleotide model)
-- `"3.3b"` - IQ-TREE specific model notation
+**Possible Values** (examples):
+- `JC` - Jukes-Cantor (equal rates)
+- `HKY` - Hasegawa-Kishino-Yano (transition/transversion bias)
+- `GTR` - General Time Reversible
+- `3.3b` - IQ-TREE specific notation
 
 **Backend Specifics**:
 - **IQ-TREE backend** (`simulation.backend: iqtree`): Accepts IQ-TREE model notation
@@ -460,10 +441,18 @@ The `dataset` section specifies output locations and the number of trees to gene
 **Type**: Positive integer  
 **Required**: No  
 **Default**: `1`  
-**Description**: Number of trees (and associated sequence alignments) to generate in this dataset.
+**Description**: Minimum number of trees (and associated sequence alignments) to generate in this dataset. When multiple branch length distributions and topologies are configured, the generator may round up to keep the number of trees per topology-distribution combination balanced.
 
 **Constraints**:
 - Must be a positive integer (> 0)
+
+**Balancing example**:
+- `tree_count: 15`
+- Distributions: uniform 0.4, exponential 0.3, truncated_exponential 0.3
+- Topologies: 3
+- Minimum distribution counts: $\lceil 6 \rceil, \lceil 4.5 \rceil, \lceil 4.5 \rceil$ → 6, 5, 5
+- Balanced per-topology counts: 2 per topology per distribution → 6, 6, 6
+- Total trees generated: 18
 
 **Example**:
 ```yaml
@@ -553,7 +542,12 @@ parallel_cores: 2
 
 tree:
   taxa_labels: [A, B]
-  branch_length_range: [0.1, 1.0]
+  branch_length_distributions:
+    uniform: 1.0
+  branch_length_params:
+    uniform:
+      range: [0.1, 1.0]
+  rooted: true
   topologies:
     - "(A,:B)"
 
@@ -580,8 +574,11 @@ parallel_cores: 4
 
 tree:
   taxa_labels: [Species_1, Species_2, Species_3]
-  branch_length_range: [0.05, 0.5]
-  branch_length_distribution: uniform
+  branch_length_distributions:
+    uniform: 1.0
+  branch_length_params:
+    uniform:
+      range: [0.05, 0.5]
   rooted: true
   split_root_branch: true
   topologies:
@@ -616,7 +613,11 @@ parallel_cores: 8
 
 tree:
   taxa_labels: [A, B, C, D]
-  branch_length_range: [0.05, 0.3]
+  branch_length_distributions:
+    uniform: 1.0
+  branch_length_params:
+    uniform:
+      range: [0.05, 0.3]
   rooted: true
   topologies:
     - "(((A,B),C),:D)"
@@ -649,9 +650,9 @@ The configuration parser performs extensive validation and raises `Configuration
 | Missing `seed` | `"Configuration missing required key: 'seed'"` |
 | Non-integer `seed` | Raised during int conversion |
 | `tree.taxa_labels` is empty | `"'tree.taxa_labels' must contain at least one label"` |
-| `branch_length_range` not exactly 2 values | `"'tree.branch_length_range' must contain exactly two values"` |
-| `branch_length_range` invalid bounds | `"Invalid 'tree.branch_length_range' values"` |
-| `branch_length_distribution` not "uniform" | `"Only 'uniform' branch length distribution is currently supported"` |
+| `branch_length_distributions` not a mapping | `"'tree.branch_length_distributions' must be a mapping of name to weight"` |
+| `branch_length_distributions` weights invalid | `"Branch length distribution weights must sum to 1"` |
+| `branch_length_params` missing or invalid | `"'tree.branch_length_params' must be provided as a mapping"` |
 | `sequence.length` ≤ 0 | `"'sequence.length' must be positive"` |
 | `simulation.backend` not in ["iqtree", "seqgen"] | `"'simulation.backend' must be either 'iqtree' or 'seqgen'"` |
 | `topologies` not provided or empty | `"'tree.topologies' must contain at least one unique definition"` |
@@ -659,7 +660,7 @@ The configuration parser performs extensive validation and raises `Configuration
 | Topology has duplicate taxa | `"Duplicate taxa found in topology '...'"` |
 | Topology missing taxa | `"Each topology must reference all taxa exactly once; missing: ..."` |
 | Rooted topology has wrong number of `:` markers | `"Rooted trees must mark exactly one child with ':'` |
-| `parallel_cores` not positive | `"'parallel_cores' must be a positive integer"` |
+| `parallel_cores` not non-negative | `"'parallel_cores' must be a non-negative integer (0 for auto-detect)"` |
 | Invalid file format | `"Configuration file must be in YAML or JSON format"` |
 
 ---
@@ -669,10 +670,8 @@ The configuration parser performs extensive validation and raises `Configuration
 | Field | Default |
 |-------|---------|
 | `parallel_cores` | `0` (auto-detect all cores) |
-| `tree.branch_length_range` | `[0.1, 1.0]` |
-| `tree.branch_length_distribution` | `"uniform"` |
-| `tree.branch_length_distributions` | `null` (not used if legacy distribution specified) |
-| `tree.branch_length_params` | `null` (uses distribution-specific defaults) |
+| `tree.branch_length_distributions` | None (required) |
+| `tree.branch_length_params` | None (required) |
 | `tree.rooted` | `true` |
 | `tree.split_root_branch` | `true` |
 | `sequence.length` | `1000` |
