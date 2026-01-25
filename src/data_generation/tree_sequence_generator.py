@@ -39,7 +39,7 @@ class TreeSequenceGenerator:
     def __init__(self, config: GenerationConfig) -> None:
         self.config = config
         self._rng = random.Random(config.seed)
-        self.parallel_cores = max(1, config.parallel_cores)
+        self.parallel_cores = mp.cpu_count() if config.parallel_cores == 0 else max(1, config.parallel_cores)
         self._active_distribution: str | None = None
 
     @classmethod
@@ -95,11 +95,19 @@ class TreeSequenceGenerator:
                 (self.config, seed, topology, distribution)
                 for seed, (topology, distribution) in zip(seeds, schedule)
             )
+            # Cap pool size to avoid resource exhaustion on large systems.
+            pool_size = min(self.parallel_cores, mp.cpu_count(), 64)
             ctx = mp.get_context("spawn")
-            with ctx.Pool(processes=self.parallel_cores) as pool:
-                for phylogeny, aligned in pool.imap(_generate_phylogeny_worker, payloads):
-                    phylogenies.append(phylogeny)
-                    all_aligned = all_aligned and aligned
+            try:
+                with ctx.Pool(processes=pool_size, maxtasksperchild=1) as pool:
+                    for phylogeny, aligned in pool.imap(_generate_phylogeny_worker, payloads, chunksize=1):
+                        phylogenies.append(phylogeny)
+                        all_aligned = all_aligned and aligned
+            except Exception as exc:
+                raise RuntimeError(
+                    "Multiprocessing failed during phylogeny generation. "
+                    "Try reducing 'parallel_cores' or running with parallel_cores=1."
+                ) from exc
 
         return phylogenies, all_aligned
 
