@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -20,7 +21,7 @@ class XMLParser:
         self.sequence_length = config.sequence.length
         self.xml_path = config.dataset.xml_path()
         self.output_path = output_path or config.dataset.output_npy_path()
-        self.parallel_cores = max(1, config.parallel_cores)
+        self.parallel_cores = mp.cpu_count() if config.parallel_cores == 0 else max(1, config.parallel_cores)
         self._extractor = PhyloExampleExtractor(config)
 
     @classmethod
