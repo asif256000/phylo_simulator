@@ -24,6 +24,7 @@ def main() -> None:
     import time
     args = parse_args()
     generator = TreeSequenceGenerator.from_config_file(args.config)
+    print(f"Using {generator.parallel_cores} CPU core(s) for parallel generation")
     t0 = time.time()
     output_path = generator.write_xml()
     t1 = time.time()
