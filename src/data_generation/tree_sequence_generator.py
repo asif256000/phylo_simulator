@@ -5,6 +5,7 @@ import random
 import subprocess
 import tempfile
 import multiprocessing as mp
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from io import StringIO
@@ -39,6 +40,7 @@ class TreeSequenceGenerator:
         self.config = config
         self._rng = random.Random(config.seed)
         self.parallel_cores = max(1, config.parallel_cores)
+        self._active_distribution: str | None = None
 
     @classmethod
     def from_config_file(cls, config_path: Path | str) -> "TreeSequenceGenerator":
@@ -47,14 +49,27 @@ class TreeSequenceGenerator:
         config = load_generation_config(config_path)
         return cls(config)
 
-    def generate_tree_and_sequences(self, topology: TopologySpec | None = None) -> TreeSequenceResult:
-        tree, used_topology = self._build_tree(topology_override=topology)
-        newick_str = self._tree_to_newick(tree)
-        sequences, aligned = self._simulate_sequences(newick_str)
-        return TreeSequenceResult(tree=tree, sequences=sequences, aligned=aligned, topology=used_topology)
+    def generate_tree_and_sequences(
+        self,
+        topology: TopologySpec | None = None,
+        distribution: str | None = None,
+    ) -> TreeSequenceResult:
+        previous = self._active_distribution
+        self._active_distribution = distribution
+        try:
+            tree, used_topology = self._build_tree(topology_override=topology)
+            newick_str = self._tree_to_newick(tree)
+            sequences, aligned = self._simulate_sequences(newick_str)
+            return TreeSequenceResult(tree=tree, sequences=sequences, aligned=aligned, topology=used_topology)
+        finally:
+            self._active_distribution = previous
 
-    def generate_phylogeny(self, topology: TopologySpec | None = None) -> tuple[Phylogeny, bool]:
-        result = self.generate_tree_and_sequences(topology=topology)
+    def generate_phylogeny(
+        self,
+        topology: TopologySpec | None = None,
+        distribution: str | None = None,
+    ) -> tuple[Phylogeny, bool]:
+        result = self.generate_tree_and_sequences(topology=topology, distribution=distribution)
         phylogeny = self._attach_sequences(result.tree, result.sequences, result.aligned)
         self._annotate_topology(phylogeny, result.topology)
         self._annotate_newick(phylogeny, self._tree_to_newick(result.tree).strip())
@@ -62,21 +77,23 @@ class TreeSequenceGenerator:
 
     def generate_phylogenies(self) -> tuple[list[Phylogeny], bool]:
         tree_count = self.config.dataset.tree_count
-        seeds = [self._rng.randint(0, 2**32 - 1) for _ in range(tree_count)]
-        schedule = self._topology_schedule(tree_count)
+        schedule = self._distribution_topology_schedule(tree_count)
+        seeds = [self._rng.randint(0, 2**32 - 1) for _ in range(len(schedule))]
 
         phylogenies: list[Phylogeny] = []
         all_aligned = True
 
         if self.parallel_cores <= 1:
-            for seed, topology in zip(seeds, schedule):
-                phylogeny, aligned = _generate_phylogeny_worker((self.config, seed, topology))
+            for seed, (topology, distribution) in zip(seeds, schedule):
+                phylogeny, aligned = _generate_phylogeny_worker(
+                    (self.config, seed, topology, distribution)
+                )
                 phylogenies.append(phylogeny)
                 all_aligned = all_aligned and aligned
         else:
-            payloads: Iterable[tuple[GenerationConfig, int, TopologySpec]] = (
-                (self.config, seed, topology)
-                for seed, topology in zip(seeds, schedule)
+            payloads: Iterable[tuple[GenerationConfig, int, TopologySpec, str]] = (
+                (self.config, seed, topology, distribution)
+                for seed, (topology, distribution) in zip(seeds, schedule)
             )
             ctx = mp.get_context("spawn")
             with ctx.Pool(processes=self.parallel_cores) as pool:
@@ -146,6 +163,39 @@ class TreeSequenceGenerator:
         candidates = self._topology_candidates(self.config.tree.taxa_count)
         count = len(candidates)
         return [candidates[index % count] for index in range(tree_count)]
+
+    def _distribution_topology_schedule(self, tree_count: int) -> list[tuple[TopologySpec, str]]:
+        candidates = self._topology_candidates(self.config.tree.taxa_count)
+        if not candidates:
+            return []
+
+        distributions = list(self.config.tree.branch_length_distributions)
+        if not distributions:
+            raise ValueError("No branch length distributions configured")
+
+        topology_count = len(candidates)
+        scheduled: list[tuple[TopologySpec, str]] = []
+
+        # Build a schedule that honors the requested tree_count exactly.
+        for dist_name, weight in distributions:
+            target = round(weight * tree_count)
+            if target == 0 and weight > 0:
+                target = 1  # ensure a non-zero representation for small but present weights
+            for index in range(target):
+                scheduled.append((candidates[index % topology_count], dist_name))
+
+        # Adjust to match tree_count exactly by trimming or padding deterministically.
+        if len(scheduled) > tree_count:
+            scheduled = scheduled[:tree_count]
+        elif len(scheduled) < tree_count:
+            # Cycle through candidates using the first distribution name to fill the gap.
+            fallback_dist = distributions[0][0]
+            start = len(scheduled)
+            for index in range(tree_count - start):
+                scheduled.append((candidates[index % topology_count], fallback_dist))
+
+        self._rng.shuffle(scheduled)
+        return scheduled
 
     def _build_tree_from_topology(self, topology: TopologySpec) -> BaseTree:
         if not topology:
@@ -308,7 +358,7 @@ class TreeSequenceGenerator:
             children[1].branch_length = split_value
 
     def _split_length(self, total: float, *, enforce_min: bool) -> tuple[float, float]:
-        min_len, _ = self.config.tree.branch_length_range
+        min_len = self.config.tree.min_branch_length
         lower_bound = min_len if enforce_min else 0.0
         upper_bound = total
         if upper_bound < lower_bound:
@@ -345,7 +395,7 @@ class TreeSequenceGenerator:
         except StopIteration as exc:  # pragma: no cover - defensive guard
             raise RuntimeError("Insufficient branch length samples for root connector") from exc
 
-        min_len, _ = self.config.tree.branch_length_range
+        min_len = self.config.tree.min_branch_length
         lower_bound = min_len
         upper_bound = connector_length
         if upper_bound < lower_bound:
@@ -433,11 +483,60 @@ class TreeSequenceGenerator:
         return None
 
     def _sample_branch_length(self) -> float:
-        min_len, max_len = self.config.tree.branch_length_range
-        distribution = self.config.tree.branch_length_distribution
-        if distribution == "uniform":
-            return self._rng.uniform(min_len, max_len)
-        raise ValueError(f"Unsupported branch length distribution '{distribution}'")
+        """Sample a branch length from the configured distribution mix."""
+        distributions = self.config.tree.branch_length_distributions
+        params = self.config.tree.branch_length_params
+
+        if not distributions:
+            raise ValueError("No branch length distributions configured")
+
+        selected_dist = self._active_distribution
+        if selected_dist is None:
+            roll = self._rng.random()
+            cumulative = 0.0
+            for dist_name, weight in distributions:
+                cumulative += weight
+                if roll <= cumulative:
+                    selected_dist = dist_name
+                    break
+            if selected_dist is None:
+                selected_dist = distributions[-1][0]
+
+        dist_params = params.get(selected_dist, {})
+
+        if selected_dist == "uniform":
+            range_vals = dist_params.get("range")
+            if not range_vals or len(range_vals) != 2:
+                raise ValueError("uniform distribution requires 'range' parameter with two values")
+            min_val, max_val = range_vals
+            return self._rng.uniform(min_val, max_val)
+
+        if selected_dist == "exponential":
+            rate = dist_params.get("rate")
+            if rate is None or rate <= 0:
+                raise ValueError("exponential distribution requires positive 'rate' parameter")
+            return self._rng.expovariate(rate)
+
+        if selected_dist == "truncated_exponential":
+            rate = dist_params.get("rate")
+            min_val = dist_params.get("min", 0.0)
+            max_val = dist_params.get("max")
+
+            if rate is None or rate <= 0:
+                raise ValueError("truncated_exponential requires positive 'rate' parameter")
+            if max_val is None or max_val <= 0:
+                raise ValueError("truncated_exponential requires positive 'max' parameter")
+            if min_val < 0 or min_val >= max_val:
+                raise ValueError("truncated_exponential 'min' must be >= 0 and < 'max'")
+
+            span = max_val - min_val
+            u = self._rng.random()
+            scale = 1.0 - math.exp(-rate * span)
+            if scale <= 0:
+                return min_val
+            return min_val - (1.0 / rate) * math.log(1.0 - u * scale)
+
+        raise ValueError(f"Unsupported branch length distribution '{selected_dist}'")
 
     def _tree_to_newick(self, tree: BaseTree) -> str:
         with StringIO() as handle:
@@ -724,8 +823,10 @@ class TreeSequenceGenerator:
 __all__ = ["TreeSequenceGenerator", "TreeSequenceResult"]
 
 
-def _generate_phylogeny_worker(payload: tuple[GenerationConfig, int, TopologySpec]) -> tuple[Phylogeny, bool]:
-    config, seed, topology = payload
+def _generate_phylogeny_worker(
+    payload: tuple[GenerationConfig, int, TopologySpec, str]
+) -> tuple[Phylogeny, bool]:
+    config, seed, topology, distribution = payload
     seeded_config = config.with_seed(seed)
     generator = TreeSequenceGenerator(seeded_config)
-    return generator.generate_phylogeny(topology=topology)
+    return generator.generate_phylogeny(topology=topology, distribution=distribution)
