@@ -33,7 +33,8 @@
     },
     "dataset": {
       "tree_count": 100,
-      "output_name": "generated_trees"
+      "output_name": "generated_trees",
+      "tree_chunk_size": 10000
     }
   },
   {
@@ -74,7 +75,8 @@
     },
     "dataset": {
       "tree_count": 50,
-      "output_name": "seqgen_dataset"
+      "output_name": "seqgen_dataset",
+      "tree_chunk_size": 10000
     }
   },
   {
@@ -115,7 +117,8 @@
     },
     "dataset": {
       "tree_count": 25,
-      "output_name": "three_taxa_example"
+      "output_name": "three_taxa_example",
+      "tree_chunk_size": 10000
     }
   },
   {
@@ -154,7 +157,8 @@
     },
     "dataset": {
       "tree_count": 40,
-      "output_name": "four_taxa_example"
+      "output_name": "four_taxa_example",
+      "tree_chunk_size": 10000
     }
   },
   {
@@ -204,7 +208,8 @@
     },
     "dataset": {
       "tree_count": 60,
-      "output_name": "unrooted_quartet"
+      "output_name": "unrooted_quartet",
+      "tree_chunk_size": 10000
     }
   },
   {
@@ -252,7 +257,8 @@
     },
     "dataset": {
       "tree_count": 200,
-      "output_name": "auto_parallel_dataset"
+      "output_name": "auto_parallel_dataset",
+      "tree_chunk_size": 10000
     }
   }
 ]

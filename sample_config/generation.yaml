@@ -36,6 +36,8 @@ simulation:
 dataset:
   tree_count: 100
   output_name: "generated_trees"
+  # Optional: number of trees to generate per XML write chunk (default 10000)
+  # tree_chunk_size: 10000
   # Optional: Specify custom directories for XML and NPY output
   # If not specified, defaults to root_directory/xml_data and root_directory/npy_data
   # xml_directory: "/path/to/custom/xml/directory"
@@ -80,6 +82,8 @@ simulation:
 dataset:
   tree_count: 50
   output_name: "seqgen_dataset"
+  # Optional: number of trees to generate per XML write chunk (default 10000)
+  # tree_chunk_size: 10000
   # Optional: Specify custom directories for XML and NPY output
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
@@ -124,6 +128,8 @@ simulation:
 dataset:
   tree_count: 25
   output_name: "three_taxa_example"
+  # Optional: number of trees to generate per XML write chunk (default 10000)
+  # tree_chunk_size: 10000
   # Optional: Specify custom directories for XML and NPY output
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
@@ -168,6 +174,8 @@ simulation:
 dataset:
   tree_count: 40
   output_name: "four_taxa_example"
+  # Optional: number of trees to generate per XML write chunk (default 10000)
+  # tree_chunk_size: 10000
 
 ---
 # Unrooted quartet (Seq-Gen) with mixed distribution: uniform and truncated exponential
@@ -215,6 +223,8 @@ simulation:
 dataset:
   tree_count: 60
   output_name: "unrooted_quartet"
+  # Optional: number of trees to generate per XML write chunk (default 10000)
+  # tree_chunk_size: 10000
 
 ---
 # Auto-detect available CPU cores for parallelization (set parallel_cores to 0)
