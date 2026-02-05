@@ -44,6 +44,7 @@ simulation:
 dataset:
   tree_count: 100
   output_name: "my_dataset"
+  tree_chunk_size: 10000
 ```
 
 For all available configuration options, see [CONFIG.md](CONFIG.md) or the [Data Generation Module documentation](src/data_generation/DATA_GENERATION.md).

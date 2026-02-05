@@ -462,6 +462,24 @@ dataset:
 
 ---
 
+### `dataset.tree_chunk_size`
+
+**Type**: Positive integer  
+**Required**: No  
+**Default**: `10000`  
+**Description**: Number of phylogenies to generate in memory before appending them to the output PhyloXML file. Larger values reduce I/O overhead but use more memory. Smaller values reduce peak memory usage when generating very large datasets.
+
+**Constraints**:
+- Must be a positive integer (> 0)
+
+**Example**:
+```yaml
+dataset:
+  tree_chunk_size: 10000
+```
+
+---
+
 ### `dataset.output_name`
 
 **Type**: String  
@@ -683,6 +701,7 @@ The configuration parser performs extensive validation and raises `Configuration
 | `simulation.indel.enabled` | `false` |
 | `simulation.indel.rates` | `null` |
 | `dataset.tree_count` | `1` |
+| `dataset.tree_chunk_size` | `10000` |
 | `dataset.xml_directory` | `null` (resolves to `xml_data/`) |
 | `dataset.npy_directory` | `null` (resolves to `npy_data/`) |
 

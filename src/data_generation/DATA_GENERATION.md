@@ -16,7 +16,7 @@ The configuration file contains five main sections:
 - **`tree`**: Taxa labels, branch length distributions with weights, distribution-specific parameters, rootedness flag, optional `split_root_branch`, and required `topologies`.
 - **`sequence`**: Sequence length and substitution model.
 - **`simulation`**: Backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
-- **`dataset`**: Number of trees to simulate (`tree_count`) and output file basename (`output_name`).
+- **`dataset`**: Number of trees to simulate (`tree_count`), output file basename (`output_name`), and optional chunking (`tree_chunk_size`).
 - **`parallel_cores`**: Level of parallelization. Defaults to `0` (auto-detect all available CPU cores). Set to `1` to disable parallelism when debugging.
 
 ### Custom Output Directories
@@ -27,6 +27,7 @@ By default, generated files are saved to `xml_data/` and `npy_data/` directories
 dataset:
   tree_count: 100
   output_name: "generated_trees"
+  tree_chunk_size: 10000  # Optional: trees per write chunk (default 10000)
   xml_directory: "/absolute/path/to/xml/output"  # Optional
   npy_directory: "/absolute/path/to/npy/output"  # Optional
 ```
