@@ -46,6 +46,7 @@ def generation_config(tmp_path: Path) -> GenerationConfig:
         "dataset": {
             "tree_count": 3,
             "output_name": "generated",
+            "tree_chunk_size": 2,
         },
     }
     return GenerationConfig.from_mapping(payload, base_path=tmp_path)
@@ -1071,6 +1072,34 @@ def test_default_directories_when_not_specified(tmp_path: Path) -> None:
     assert config.dataset.npy_directory is None
     assert config.dataset.xml_path() == tmp_path / "xml_data" / "generated.xml"
     assert config.dataset.output_npy_path() == tmp_path / "npy_data" / "generated.npy"
+
+
+def test_tree_chunk_size_must_be_positive(tmp_path: Path) -> None:
+    payload = {
+        "seed": 42,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 8, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {"enabled": False},
+        },
+        "dataset": {
+            "tree_count": 3,
+            "tree_chunk_size": 0,
+            "output_name": "generated",
+        },
+    }
+    with pytest.raises(ConfigurationError, match="'dataset.tree_chunk_size' must be positive"):
+        GenerationConfig.from_mapping(payload, base_path=tmp_path)
 
 
 def test_empty_xml_directory_raises_error(tmp_path: Path) -> None:
