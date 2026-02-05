@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import multiprocessing as mp
 import math
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from io import StringIO
@@ -112,15 +113,90 @@ class TreeSequenceGenerator:
         return phylogenies, all_aligned
 
     def write_xml(self) -> Path:
-        phylogenies, aligned = self.generate_phylogenies()
         dataset_settings = self.config.dataset
         dataset_settings.ensure_xml_directory()
         output_path = dataset_settings.xml_path()
-        phyloxml = PhyloXML.Phyloxml({})
-        phyloxml.phylogenies = phylogenies
+        chunk_size = dataset_settings.tree_chunk_size
+        if chunk_size <= 0:
+            raise ValueError("'dataset.tree_chunk_size' must be positive")
+
+        footer: str | None = None
         with output_path.open("w", encoding="utf-8") as handle:
-            phylo_write(phyloxml, handle, "phyloxml")
+            for index, (phylogenies, _aligned) in enumerate(self._iter_phylogeny_chunks(chunk_size)):
+                phyloxml = PhyloXML.Phyloxml({})
+                phyloxml.phylogenies = phylogenies
+                xml_text = self._render_phyloxml(phyloxml)
+                header, body, chunk_footer = self._split_phyloxml_document(xml_text)
+                if index == 0:
+                    handle.write(header)
+                    handle.write(body)
+                    footer = chunk_footer
+                else:
+                    handle.write(body)
+
+            if footer is not None:
+                handle.write(footer)
         return output_path
+
+    def _iter_phylogeny_chunks(self, chunk_size: int) -> Iterator[tuple[list[Phylogeny], bool]]:
+        tree_count = self.config.dataset.tree_count
+        schedule = self._distribution_topology_schedule(tree_count)
+        seeds = [self._rng.randint(0, 2**32 - 1) for _ in range(len(schedule))]
+
+        if self.parallel_cores <= 1:
+            for start in range(0, len(schedule), chunk_size):
+                end = start + chunk_size
+                phylogenies: list[Phylogeny] = []
+                chunk_aligned = True
+                for seed, (topology, distribution) in zip(seeds[start:end], schedule[start:end]):
+                    phylogeny, aligned = _generate_phylogeny_worker(
+                        (self.config, seed, topology, distribution)
+                    )
+                    phylogenies.append(phylogeny)
+                    chunk_aligned = chunk_aligned and aligned
+                yield phylogenies, chunk_aligned
+            return
+
+        payloads_all = [
+            (self.config, seed, topology, distribution)
+            for seed, (topology, distribution) in zip(seeds, schedule)
+        ]
+        pool_size = min(self.parallel_cores, mp.cpu_count(), 64)
+        ctx = mp.get_context("spawn")
+        try:
+            with ctx.Pool(processes=pool_size, maxtasksperchild=1) as pool:
+                for start in range(0, len(payloads_all), chunk_size):
+                    chunk_payloads = payloads_all[start:start + chunk_size]
+                    phylogenies = []
+                    chunk_aligned = True
+                    for phylogeny, aligned in pool.imap(
+                        _generate_phylogeny_worker, chunk_payloads, chunksize=1
+                    ):
+                        phylogenies.append(phylogeny)
+                        chunk_aligned = chunk_aligned and aligned
+                    yield phylogenies, chunk_aligned
+        except Exception as exc:
+            raise RuntimeError(
+                "Multiprocessing failed during phylogeny generation. "
+                "Try reducing 'parallel_cores' or running with parallel_cores=1."
+            ) from exc
+
+    @staticmethod
+    def _render_phyloxml(phyloxml: PhyloXML.Phyloxml) -> str:
+        buffer = StringIO()
+        phylo_write(phyloxml, buffer, "phyloxml")
+        return buffer.getvalue()
+
+    @staticmethod
+    def _split_phyloxml_document(xml_text: str) -> tuple[str, str, str]:
+        open_match = re.search(r"<phyloxml[^>]*>", xml_text)
+        close_match = re.search(r"</phyloxml\s*>", xml_text)
+        if not open_match or not close_match:
+            raise ValueError("Unable to locate phyloxml document boundaries")
+        header = xml_text[: open_match.end()]
+        body = xml_text[open_match.end() : close_match.start()]
+        footer = xml_text[close_match.start() :]
+        return header, body, footer
 
     def _build_tree(self, topology_override: TopologySpec | None = None) -> tuple[BaseTree, TopologySpec]:
         taxa_count = self.config.tree.taxa_count

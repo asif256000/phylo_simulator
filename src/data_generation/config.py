@@ -133,6 +133,7 @@ class DatasetSettings:
     tree_count: int
     output_basename: str
     root_directory: Path
+    tree_chunk_size: int = 10000
     xml_directory: Optional[str] = None
     npy_directory: Optional[str] = None
 
@@ -319,6 +320,9 @@ class GenerationConfig:
         tree_count = int(dataset_payload.get("tree_count", 1))
         if tree_count <= 0:
             raise ConfigurationError("'dataset.tree_count' must be positive")
+        tree_chunk_size = int(dataset_payload.get("tree_chunk_size", 10000))
+        if tree_chunk_size <= 0:
+            raise ConfigurationError("'dataset.tree_chunk_size' must be positive")
         output_name_raw = dataset_payload.get("output_name")
         if output_name_raw is not None:
             candidate_name = str(output_name_raw).strip()
@@ -348,6 +352,7 @@ class GenerationConfig:
         
         dataset_settings = DatasetSettings(
             tree_count=tree_count,
+            tree_chunk_size=tree_chunk_size,
             output_basename=output_basename,
             root_directory=root_directory,
             xml_directory=xml_directory,
