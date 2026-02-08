@@ -630,6 +630,7 @@ class TreeSequenceGenerator:
     def _simulate_sequences(self, newick_tree: str) -> tuple[dict[str, str], bool]:
         simulation = self.config.simulation
         indel_rates = simulation.indel.rates if simulation.indel.enabled else None
+        indel_sizes = simulation.indel.sizes if simulation.indel.enabled else None
 
         simulator = simulation.backend
         if simulator == "iqtree":
@@ -638,10 +639,11 @@ class TreeSequenceGenerator:
                 seq_length=self.config.sequence.length,
                 model=self.config.sequence.model,
                 indel_rate=indel_rates,
+                indel_size=indel_sizes,
                 iqtree_path=simulation.iqtree_path,
             )
         elif simulator == "seqgen":
-            if indel_rates is not None:
+            if indel_rates is not None or indel_sizes is not None:
                 raise ValueError("Seq-Gen simulation does not support indel parameters")
             sequences = self._simulate_with_seqgen(
                 newick_tree,
@@ -703,6 +705,7 @@ class TreeSequenceGenerator:
         seq_length: int,
         model: str,
         indel_rate: tuple[float, float] | None,
+        indel_size: tuple[str, str] | None,
         iqtree_path: str | None,
     ) -> dict[str, str]:
         iqtree_exec = iqtree_path or "iqtree3"
@@ -740,6 +743,9 @@ class TreeSequenceGenerator:
             if indel_rate:
                 ins_rate, del_rate = indel_rate
                 command.extend(["--indel", f"{ins_rate},{del_rate}"])
+            if indel_size:
+                ins_size, del_size = indel_size
+                command.extend(["--indel-size", f"{ins_size},{del_size}"])
 
             try:
                 subprocess.run(command, check=True, capture_output=True)
