@@ -113,6 +113,7 @@ class IndelSettings:
 
     enabled: bool = False
     rates: Optional[tuple[float, float]] = None
+    sizes: Optional[tuple[str, str]] = None
 
 
 @dataclass
@@ -294,7 +295,10 @@ class GenerationConfig:
         indel_payload = simulation_payload.get("indel", {}) or {}
         if not isinstance(indel_payload, Mapping):
             raise ConfigurationError("'simulation.indel' must be a mapping when provided")
-        indel_enabled = bool(indel_payload.get("enabled", False))
+        enabled_raw = indel_payload.get("enabled", False)
+        if not isinstance(enabled_raw, bool):
+            raise ConfigurationError("'simulation.indel.enabled' must be a boolean")
+        indel_enabled = enabled_raw
         rates_payload = indel_payload.get("rates")
         rates_tuple: Optional[tuple[float, float]]
         if rates_payload is None:
@@ -306,7 +310,22 @@ class GenerationConfig:
             if len(candidate_rates) != 2:
                 raise ConfigurationError("'simulation.indel.rates' must contain exactly two values")
             rates_tuple = candidate_rates
-        indel_settings = IndelSettings(enabled=indel_enabled, rates=rates_tuple)
+
+        sizes_payload = indel_payload.get("sizes")
+        sizes_tuple: Optional[tuple[str, str]]
+        if sizes_payload is None:
+            sizes_tuple = None
+        else:
+            if not isinstance(sizes_payload, Iterable) or isinstance(sizes_payload, (str, bytes)):
+                raise ConfigurationError("'simulation.indel.sizes' must be an iterable of two strings")
+            candidate_sizes = tuple(str(value).strip() for value in sizes_payload)
+            if len(candidate_sizes) != 2:
+                raise ConfigurationError("'simulation.indel.sizes' must contain exactly two values")
+            if any(not value for value in candidate_sizes):
+                raise ConfigurationError("'simulation.indel.sizes' values must be non-empty strings")
+            sizes_tuple = candidate_sizes  # type: ignore[assignment]
+
+        indel_settings = IndelSettings(enabled=indel_enabled, rates=rates_tuple, sizes=sizes_tuple)
 
         simulation_settings = SimulationSettings(
             backend=backend_raw,
