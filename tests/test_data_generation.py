@@ -26,6 +26,7 @@ def _branch_lengths(tree: Phylo.BaseTree.Tree) -> list[float]:
 def generation_config(tmp_path: Path) -> GenerationConfig:
     payload: dict[str, object] = {
         "seed": 42,
+        "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
             "branch_length_distributions": {"uniform": 1.0},
@@ -122,6 +123,7 @@ def test_write_xml_creates_expected_phyloxml(monkeypatch: pytest.MonkeyPatch, ge
 def test_verify_module_emits_newick_dump(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     payload = {
         "seed": 7,
+        "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
             "branch_length_distributions": {"uniform": 1.0},
@@ -164,11 +166,42 @@ def test_verify_module_emits_newick_dump(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert all(line.endswith(";") for line in contents)
 
 
+def test_indel_sizes_parsed_from_config(tmp_path: Path) -> None:
+    payload = {
+        "seed": 21,
+        "parallel_cores": 1,
+        "tree": {
+            "taxa_labels": ["A", "B"],
+            "branch_length_distributions": {"uniform": 1.0},
+            "branch_length_params": {"uniform": {"range": [0.1, 1.0]}},
+            "rooted": True,
+            "topologies": ["(A,:B)"],
+        },
+        "sequence": {"length": 4, "model": "JC"},
+        "simulation": {
+            "backend": "iqtree",
+            "iqtree_path": "/fake/iqtree",
+            "seqgen_path": "/fake/seq-gen",
+            "seqgen_kwargs": {},
+            "indel": {
+                "enabled": True,
+                "rates": [0.02, 0.03],
+                "sizes": ["POW{1.5/50}", "GEO{5}"],
+            },
+        },
+        "dataset": {"tree_count": 1, "output_name": "indel_sizes"},
+    }
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    assert config.simulation.indel.sizes == ("POW{1.5/50}", "GEO{5}")
+
+
 def test_verify_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test that verify module uses custom xml_directory when specified."""
     custom_xml_dir = str(tmp_path / "my_custom_xml")
     payload = {
         "seed": 7,
+        "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
             "branch_length_distributions": {"uniform": 1.0},
@@ -218,6 +251,7 @@ def test_verify_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch
 def test_verify_sequences_module_emits_fasta_dump(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     payload = {
         "seed": 11,
+        "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
             "branch_length_distributions": {"uniform": 1.0},
@@ -272,6 +306,7 @@ def test_verify_sequences_module_with_custom_xml_directory(monkeypatch: pytest.M
     custom_xml_dir = str(tmp_path / "custom_xml")
     payload = {
         "seed": 13,
+        "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B"],
             "branch_length_distributions": {"uniform": 1.0},
@@ -617,6 +652,7 @@ def test_split_root_branch_flag_parsing(tmp_path: Path) -> None:
 def test_topology_cycle_even_distribution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     payload = {
         "seed": 9,
+        "parallel_cores": 1,
         "tree": {
             "taxa_labels": ["A", "B", "C"],
             "branch_length_distributions": {"uniform": 1.0},
