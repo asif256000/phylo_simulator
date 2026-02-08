@@ -112,7 +112,8 @@
       "seqgen_kwargs": {},
       "indel": {
         "enabled": true,
-        "rates": [0.05, 0.05]
+        "rates": [0.05, 0.05],
+        "sizes": ["POW{1.5/50}", "GEO{5}"]
       }
     },
     "dataset": {

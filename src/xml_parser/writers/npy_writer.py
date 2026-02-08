@@ -37,9 +37,17 @@ class NpyDatasetWriter(DatasetWriter):
         output_path = self.output_path or self.config.dataset.output_npy_path()
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        sequence_length = self.sequence_length
+        if self.include_gap_channel:
+            observed_max = max(
+                (len(clade.sequence) for example in examples for clade in example.clades),
+                default=sequence_length,
+            )
+            sequence_length = max(sequence_length, observed_max)
+
         dtype = np.dtype(
             [
-                ("X", np.uint8, (len(self.clade_names), self.sequence_length, self.channel_count)),
+                ("X", np.uint8, (len(self.clade_names), sequence_length, self.channel_count)),
                 ("y_br", np.float32, (self.num_branches,)),
                 ("branch_mask", np.bool_, (self.num_branches,)),
                 ("y_top", np.float32, (self.num_topologies,)),
@@ -59,7 +67,7 @@ class NpyDatasetWriter(DatasetWriter):
                 row_index,
                 example,
                 self.clade_names,
-                self.sequence_length,
+                sequence_length,
                 self.channel_count,
                 self.include_gap_channel,
                 self.use_special_branch_order,
@@ -120,7 +128,14 @@ def _encode_example(
 
     for clade_index, clade in enumerate(example.clades):
         try:
-            encoding = one_hot_encode(clade.sequence, sequence_length, include_gap=include_gap)
+            sequence_value = clade.sequence
+            if include_gap and len(sequence_value) < sequence_length:
+                sequence_value = sequence_value + "+" * (sequence_length - len(sequence_value))
+            if len(sequence_value) != sequence_length:
+                raise ValueError(
+                    f"Sequence length mismatch: expected {sequence_length}, observed {len(sequence_value)}"
+                )
+            encoding = one_hot_encode(sequence_value, sequence_length, include_gap=include_gap)
             encoded[clade_index] = encoding
         except ValueError as exc:
             raise ValueError(

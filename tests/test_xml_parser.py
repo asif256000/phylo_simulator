@@ -120,10 +120,11 @@ def test_one_hot_encode_validates_length(config: GenerationConfig) -> None:
 
 
 def test_one_hot_encode_supports_gap_when_enabled() -> None:
-    sequence = "AT-C"
+    sequence = "AT+-C"
     encoding = one_hot_encode(sequence, len(sequence), include_gap=True)
-    assert encoding.shape == (4, 5)
-    assert encoding[2, 4] == 1  # gap occupies the final channel
+    assert encoding.shape == (5, 6)
+    assert encoding[2, 4] == 1  # padding occupies channel 4
+    assert encoding[3, 5] == 1  # gap occupies channel 5
     with pytest.raises(ValueError):
         one_hot_encode(sequence, len(sequence))
 
@@ -155,8 +156,8 @@ def test_write_dataset_uses_gap_channel(tmp_path: Path) -> None:
         TreeExample(
             tree_index=0,
             clades=[
-                CladeRecord(name="A", sequence="A-A-", branch_length=0.5),
-                CladeRecord(name="B", sequence="TT-T", branch_length=0.7),
+                CladeRecord(name="A", sequence="A--T", branch_length=0.5),
+                CladeRecord(name="B", sequence="TT-A", branch_length=0.7),
             ],
             branches={frozenset(["A"]): 0.5, frozenset(["B"]): 0.7},
             metadata={"topology": "(A,:B)"},
@@ -165,8 +166,10 @@ def test_write_dataset_uses_gap_channel(tmp_path: Path) -> None:
     dataset_path = parser.write_dataset(examples=examples)
     dataset = np.load(dataset_path, mmap_mode="r")
     record = dataset[0]
-    assert record["X"].shape == (2, 4, 5)
-    assert record["X"][0, 1, 4] == 1
+    assert record["X"].shape == (2, 4, 6)
+    assert record["X"][0, 1, 5] == 1
+    assert record["X"][0, 2, 5] == 1
+    assert record["X"][1, 2, 5] == 1
 
 
 def test_branch_mapping_three_taxa(tmp_path: Path) -> None:

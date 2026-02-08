@@ -32,6 +32,8 @@ simulation:
   indel:
     enabled: false
     rates: [0.1, 0.1]
+    # Optional AliSim size distributions for insertions/deletions
+    # sizes: ["POW{1.5/50}", "GEO{5}"]
 
 dataset:
   tree_count: 100
@@ -124,6 +126,7 @@ simulation:
   indel:
     enabled: true
     rates: [0.05, 0.05]
+    sizes: ["POW{1.5/50}", "GEO{5}"]
 
 dataset:
   tree_count: 25
@@ -170,6 +173,8 @@ simulation:
   indel:
     enabled: false
     rates: [0.05, 0.05]
+    # Optional AliSim size distributions for insertions/deletions
+    # sizes: ["POW{1.5/50}", "GEO{5}"]
 
 dataset:
   tree_count: 40
