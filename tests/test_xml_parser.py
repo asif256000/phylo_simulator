@@ -8,45 +8,7 @@ from src.data_generation.tree_sequence_generator import TreeSequenceGenerator
 from src.xml_parser import CladeRecord, TreeExample, XMLParser, one_hot_encode
 from src.xml_parser.writers.npy_writer import NpyDatasetWriter
 
-
-@pytest.fixture
-def config(tmp_path_factory: pytest.TempPathFactory) -> GenerationConfig:
-    base_dir = tmp_path_factory.mktemp("config")
-    payload = {
-        "seed": 7,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": ["A", "B"],
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
-            "rooted": True,
-            "topologies": ["(A,:B)"],
-        },
-        "sequence": {"length": 6, "model": "JC"},
-        "simulation": {
-            "backend": "iqtree",
-            "iqtree_path": "/fake/iqtree",
-            "seqgen_path": "/fake/seq-gen",
-            "seqgen_kwargs": {},
-            "indel": {"enabled": False},
-        },
-        "dataset": {"tree_count": 1, "output_name": "generated"},
-    }
-    return GenerationConfig.from_mapping(payload, base_path=base_dir)
-
-
-@pytest.fixture
-def phyloxml_file(monkeypatch: pytest.MonkeyPatch, config: GenerationConfig) -> Path:
-    generator = TreeSequenceGenerator(config)
-    monkeypatch.setattr(
-        TreeSequenceGenerator,
-        "_simulate_with_iqtree",
-        lambda self, *args, **kwargs: {
-            "A": "A" * config.sequence.length,
-            "B": "C" * config.sequence.length,
-        },
-    )
-    return generator.write_xml()
+from tests.test_inputs import build_payload, config, phyloxml_file, uniform_payload
 
 
 def test_parse_examples_extracts_clades(phyloxml_file: Path, config: GenerationConfig) -> None:
@@ -130,26 +92,23 @@ def test_one_hot_encode_supports_gap_when_enabled() -> None:
 
 
 def test_write_dataset_uses_gap_channel(tmp_path: Path) -> None:
-    payload = {
-        "seed": 11,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": ["A", "B"],
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
-            "rooted": True,
-            "topologies": ["(A,:B)"],
-        },
-        "sequence": {"length": 4, "model": "JC"},
-        "simulation": {
+    payload = build_payload(
+        seed=11,
+        taxa_labels=["A", "B"],
+        topologies=["(A,:B)"],
+        sequence_length=4,
+        tree_count=1,
+        output_name="gapped",
+        branch_length_distributions={"uniform": 1.0},
+        branch_length_params={"uniform": {"range": [0.1, 0.2]}},
+        simulation={
             "backend": "iqtree",
             "iqtree_path": "/fake/iqtree",
             "seqgen_path": "/fake/seq-gen",
             "seqgen_kwargs": {},
             "indel": {"enabled": True, "rates": [0.02, 0.02]},
         },
-        "dataset": {"tree_count": 1, "output_name": "gapped"},
-    }
+    )
     config_with_indels = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     parser = XMLParser(config_with_indels, output_path=tmp_path / "gapped.npy")
     examples = [
@@ -172,27 +131,57 @@ def test_write_dataset_uses_gap_channel(tmp_path: Path) -> None:
     assert record["X"][1, 2, 5] == 1
 
 
-def test_branch_mapping_three_taxa(tmp_path: Path) -> None:
-    payload = {
-        "seed": 5,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": ["A", "B", "C"],
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
-            "rooted": True,
-            "topologies": ["((A,B),:C)"]
-        },
-        "sequence": {"length": 4, "model": "JC"},
-        "simulation": {
+def test_write_dataset_pads_shorter_sequences(tmp_path: Path) -> None:
+    payload = build_payload(
+        seed=14,
+        taxa_labels=["A", "B"],
+        topologies=["(A,:B)"],
+        sequence_length=5,
+        tree_count=1,
+        output_name="gapped",
+        branch_length_distributions={"uniform": 1.0},
+        branch_length_params={"uniform": {"range": [0.1, 0.2]}},
+        simulation={
             "backend": "iqtree",
             "iqtree_path": "/fake/iqtree",
             "seqgen_path": "/fake/seq-gen",
             "seqgen_kwargs": {},
-            "indel": {"enabled": False},
+            "indel": {"enabled": True, "rates": [0.02, 0.02]},
         },
-        "dataset": {"tree_count": 1, "output_name": "three_taxa"},
-    }
+    )
+    config_with_indels = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    parser = XMLParser(config_with_indels, output_path=tmp_path / "gapped_pad.npy")
+    examples = [
+        TreeExample(
+            tree_index=0,
+            clades=[
+                CladeRecord(name="A", sequence="A-", branch_length=0.5),
+                CladeRecord(name="B", sequence="TT-", branch_length=0.7),
+            ],
+            branches={frozenset(["A"]): 0.5, frozenset(["B"]): 0.7},
+            metadata={"topology": "(A,:B)"},
+        )
+    ]
+    dataset_path = parser.write_dataset(examples=examples)
+    dataset = np.load(dataset_path, mmap_mode="r")
+    record = dataset[0]
+    assert record["X"].shape == (2, 5, 6)
+    assert record["X"][0, 2, 4] == 1
+    assert record["X"][0, 3, 4] == 1
+    assert record["X"][1, 3, 4] == 1
+    assert record["X"][1, 4, 4] == 1
+
+
+def test_branch_mapping_three_taxa(tmp_path: Path) -> None:
+    payload = uniform_payload(
+        seed=5,
+        taxa_labels=["A", "B", "C"],
+        topologies=["((A,B),:C)"],
+        sequence_length=4,
+        tree_count=1,
+        output_name="three_taxa",
+        uniform_range=(0.1, 0.2),
+    )
 
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     writer = NpyDatasetWriter(config, output_path=tmp_path / "three.npy")
@@ -226,26 +215,16 @@ def test_branch_mapping_three_taxa(tmp_path: Path) -> None:
 
 
 def test_branch_mapping_unrooted_two_taxa(tmp_path: Path) -> None:
-    payload = {
-        "seed": 5,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": ["A", "B"],
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
-            "rooted": False,
-            "topologies": ["(A,B)"]
-        },
-        "sequence": {"length": 4, "model": "JC"},
-        "simulation": {
-            "backend": "iqtree",
-            "iqtree_path": "/fake/iqtree",
-            "seqgen_path": "/fake/seq-gen",
-            "seqgen_kwargs": {},
-            "indel": {"enabled": False},
-        },
-        "dataset": {"tree_count": 1, "output_name": "two_unrooted"},
-    }
+    payload = uniform_payload(
+        seed=5,
+        taxa_labels=["A", "B"],
+        topologies=["(A,B)"],
+        sequence_length=4,
+        tree_count=1,
+        output_name="two_unrooted",
+        uniform_range=(0.1, 0.2),
+        rooted=False,
+    )
 
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     writer = NpyDatasetWriter(config, output_path=tmp_path / "two.npy")
@@ -271,26 +250,16 @@ def test_branch_mapping_unrooted_two_taxa(tmp_path: Path) -> None:
 
 
 def test_branch_mapping_unrooted_three_taxa(tmp_path: Path) -> None:
-    payload = {
-        "seed": 5,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": ["A", "B", "C"],
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
-            "rooted": False,
-            "topologies": ["(A,(B,C))"]
-        },
-        "sequence": {"length": 4, "model": "JC"},
-        "simulation": {
-            "backend": "iqtree",
-            "iqtree_path": "/fake/iqtree",
-            "seqgen_path": "/fake/seq-gen",
-            "seqgen_kwargs": {},
-            "indel": {"enabled": False},
-        },
-        "dataset": {"tree_count": 1, "output_name": "three_unrooted"},
-    }
+    payload = uniform_payload(
+        seed=5,
+        taxa_labels=["A", "B", "C"],
+        topologies=["(A,(B,C))"],
+        sequence_length=4,
+        tree_count=1,
+        output_name="three_unrooted",
+        uniform_range=(0.1, 0.2),
+        rooted=False,
+    )
 
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     writer = NpyDatasetWriter(config, output_path=tmp_path / "three_unrooted.npy")
@@ -323,26 +292,16 @@ def test_branch_mapping_unrooted_three_taxa(tmp_path: Path) -> None:
 
 
 def test_branch_mapping_unrooted_four_taxa(tmp_path: Path) -> None:
-    payload = {
-        "seed": 5,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": ["A", "B", "C", "D"],
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
-            "rooted": False,
-            "topologies": ["((A,B),(C,D))"]
-        },
-        "sequence": {"length": 4, "model": "JC"},
-        "simulation": {
-            "backend": "iqtree",
-            "iqtree_path": "/fake/iqtree",
-            "seqgen_path": "/fake/seq-gen",
-            "seqgen_kwargs": {},
-            "indel": {"enabled": False},
-        },
-        "dataset": {"tree_count": 1, "output_name": "four_unrooted"},
-    }
+    payload = uniform_payload(
+        seed=5,
+        taxa_labels=["A", "B", "C", "D"],
+        topologies=["((A,B),(C,D))"],
+        sequence_length=4,
+        tree_count=1,
+        output_name="four_unrooted",
+        uniform_range=(0.1, 0.2),
+        rooted=False,
+    )
 
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     writer = NpyDatasetWriter(config, output_path=tmp_path / "four_unrooted.npy")
@@ -378,26 +337,15 @@ def test_branch_mapping_unrooted_four_taxa(tmp_path: Path) -> None:
 
 
 def test_branch_mapping_four_taxa(tmp_path: Path) -> None:
-    payload = {
-        "seed": 9,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": ["A", "B", "C", "D"],
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.1, 0.2]}},
-            "rooted": True,
-            "topologies": ["((A,B),:(C,D))"],
-        },
-        "sequence": {"length": 4, "model": "JC"},
-        "simulation": {
-            "backend": "iqtree",
-            "iqtree_path": "/fake/iqtree",
-            "seqgen_path": "/fake/seq-gen",
-            "seqgen_kwargs": {},
-            "indel": {"enabled": False},
-        },
-        "dataset": {"tree_count": 1, "output_name": "four_taxa"},
-    }
+    payload = uniform_payload(
+        seed=9,
+        taxa_labels=["A", "B", "C", "D"],
+        topologies=["((A,B),:(C,D))"],
+        sequence_length=4,
+        tree_count=1,
+        output_name="four_taxa",
+        uniform_range=(0.1, 0.2),
+    )
 
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     writer = NpyDatasetWriter(config, output_path=tmp_path / "four.npy")
@@ -448,26 +396,15 @@ def test_xml_parser_supports_multi_taxa_shapes(
     topologies: tuple[str, ...],
 ) -> None:
     base_dir = tmp_path_factory.mktemp("multi_taxa")
-    payload = {
-        "seed": 13,
-        "parallel_cores": 1,
-        "tree": {
-            "taxa_labels": list(taxa_labels),
-            "branch_length_distributions": {"uniform": 1.0},
-            "branch_length_params": {"uniform": {"range": [0.2, 0.4]}},
-            "rooted": True,
-            "topologies": list(topologies),
-        },
-        "sequence": {"length": 12, "model": "JC"},
-        "simulation": {
-            "backend": "iqtree",
-            "iqtree_path": "/fake/iqtree",
-            "seqgen_path": "/fake/seq-gen",
-            "seqgen_kwargs": {},
-            "indel": {"enabled": False},
-        },
-        "dataset": {"tree_count": 2, "output_name": "multi_dataset"},
-    }
+    payload = uniform_payload(
+        seed=13,
+        taxa_labels=list(taxa_labels),
+        topologies=list(topologies),
+        sequence_length=12,
+        tree_count=2,
+        output_name="multi_dataset",
+        uniform_range=(0.2, 0.4),
+    )
     config = GenerationConfig.from_mapping(payload, base_path=base_dir)
     allowed_nucleotides = ("A", "T", "G", "C")
     sequences = {
