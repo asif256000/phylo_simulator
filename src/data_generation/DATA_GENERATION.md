@@ -185,7 +185,7 @@ The generated PhyloXML file contains:
 
 - **Phylogenies**: Each tree with simulated sequences.
 - **Metadata**: Topology definition, branch lengths, taxon labels, and sequence length.
-- **Sequences**: Aligned sequences for each taxon in each tree.
+- **Sequences**: Aligned sequences for each taxon in each tree. Indel padding (`+`) is applied during NumPy dataset creation; deletion gaps remain `-`. IQ-TREE indel sizes can be configured via `simulation.indel.sizes` (passed through to AliSim).
 
 The file is compatible with standard PhyloXML tools and can be parsed by the `xml_parser` module for conversion to NumPy arrays.
 

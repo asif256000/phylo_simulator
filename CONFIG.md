@@ -257,6 +257,8 @@ The `sequence` section controls sequence simulation parameters.
 **Default**: `1000`  
 **Description**: The length of each simulated sequence (in nucleotides or amino acids, depending on the model).
 
+When indels are enabled, this value is treated as the minimum sequence length. Padding to a common length is applied when generating NumPy datasets.
+
 **Constraints**:
 - Must be a positive integer (> 0)
 
@@ -386,7 +388,7 @@ simulation:
 **Type**: Object/mapping  
 **Required**: No  
 **Default**: `{ enabled: false, rates: null }`  
-**Description**: Configuration for indel (insertion/deletion) simulation. When enabled, indels are simulated along branches and the resulting alignment is stored in the output dataset with a dedicated gap channel.
+**Description**: Configuration for indel (insertion/deletion) simulation. When enabled, indels are simulated along branches and the resulting alignment is stored in the output dataset with dedicated padding (`+`) and gap (`-`) channels. Padding is applied during NumPy dataset creation, not in the XML output.
 
 ---
 
@@ -399,7 +401,7 @@ simulation:
 
 **Possible Values**:
 - `false` - No indels; sequences remain unaligned
-- `true` - Simulate indels; alignment with gap channel is recorded
+- `true` - Simulate indels; alignment with padding and gap channels is recorded
 
 **Example**:
 ```yaml
@@ -428,6 +430,27 @@ simulation:
   indel:
     enabled: true
     rates: [0.05, 0.05]
+```
+
+---
+
+### `simulation.indel.sizes`
+
+**Type**: List of two strings or null  
+**Required**: No  
+**Default**: `null`  
+**Description**: Indel size distributions for insertion and deletion, passed directly to IQ-TREE AliSim. Provide two values: `[insertion_size, deletion_size]` (e.g., `POW{1.5/50}`, `GEO{5}`). Only used if `simulation.indel.enabled: true`.
+
+**Constraints**:
+- Must be a list of exactly two non-empty strings if provided
+- AliSim size specification syntax is passed through as-is
+
+**Example**:
+```yaml
+simulation:
+  indel:
+    enabled: true
+    sizes: ["POW{1.5/50}", "GEO{5}"]
 ```
 
 ---
@@ -700,6 +723,7 @@ The configuration parser performs extensive validation and raises `Configuration
 | `simulation.seqgen_kwargs` | `{}` (empty) |
 | `simulation.indel.enabled` | `false` |
 | `simulation.indel.rates` | `null` |
+| `simulation.indel.sizes` | `null` |
 | `dataset.tree_count` | `1` |
 | `dataset.tree_chunk_size` | `10000` |
 | `dataset.xml_directory` | `null` (resolves to `xml_data/`) |
