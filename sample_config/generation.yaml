@@ -45,6 +45,10 @@ dataset:
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
 
+# Optional verification settings
+# verify:
+#   padding_for_fasta: false
+
 ---
 # Seq-Gen example with exponential distribution
 seed: 31415
@@ -89,6 +93,10 @@ dataset:
   # Optional: Specify custom directories for XML and NPY output
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
+
+# Optional verification settings
+# verify:
+#   padding_for_fasta: false
 
 ---
 # Three-taxa configuration with mixture of uniform and exponential distributions (enables indels)
@@ -137,6 +145,10 @@ dataset:
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
 
+# Optional verification settings
+# verify:
+#   padding_for_fasta: false
+
 ---
 # Four-taxa configuration with truncated exponential distribution
 seed: 24680
@@ -181,6 +193,10 @@ dataset:
   output_name: "four_taxa_example"
   # Optional: number of trees to generate per XML write chunk (default 10000)
   # tree_chunk_size: 10000
+
+# Optional verification settings
+# verify:
+#   padding_for_fasta: false
 
 ---
 # Unrooted quartet (Seq-Gen) with mixed distribution: uniform and truncated exponential
@@ -230,6 +246,10 @@ dataset:
   output_name: "unrooted_quartet"
   # Optional: number of trees to generate per XML write chunk (default 10000)
   # tree_chunk_size: 10000
+
+# Optional verification settings
+# verify:
+#   padding_for_fasta: false
 
 ---
 # Auto-detect available CPU cores for parallelization (set parallel_cores to 0)
