@@ -25,7 +25,12 @@ def verify_sequences_from_config(config_path: Path | str) -> Path:
 
     destination = _default_sequence_path(xml_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    _write_fasta_dump(xml_path, destination, config.tree.taxa_labels)
+    _write_fasta_dump(
+        xml_path,
+        destination,
+        config.tree.taxa_labels,
+        padding_for_fasta=config.verify.padding_for_fasta,
+    )
     return destination
 
 
@@ -36,7 +41,17 @@ def _default_sequence_path(xml_path: Path) -> Path:
     return verify_directory / f"{xml_path.stem}_sequences.fasta"
 
 
-def _write_fasta_dump(xml_path: Path, output_path: Path, taxa_labels: tuple[str, ...]) -> None:
+def _write_fasta_dump(
+    xml_path: Path,
+    output_path: Path,
+    taxa_labels: tuple[str, ...],
+    *,
+    padding_for_fasta: bool,
+) -> None:
+    max_length = None
+    if padding_for_fasta:
+        max_length = _find_max_sequence_length(xml_path, taxa_labels)
+
     tree_index = 0
     with output_path.open("w", encoding="utf-8") as handle:
         for tree_index, phylogeny in enumerate(Phylo.parse(str(xml_path), "phyloxml"), start=1):
@@ -45,7 +60,10 @@ def _write_fasta_dump(xml_path: Path, output_path: Path, taxa_labels: tuple[str,
                 header = f">{taxon}_{tree_index}"
                 handle.write(header)
                 handle.write("\n")
-                handle.write(sequence_map[taxon])
+                sequence_value = sequence_map[taxon]
+                if max_length is not None and len(sequence_value) < max_length:
+                    sequence_value = sequence_value + "*" * (max_length - len(sequence_value))
+                handle.write(sequence_value)
                 handle.write("\n")
     if tree_index == 0:
         output_path.write_text("", encoding="utf-8")
@@ -72,6 +90,15 @@ def _extract_sequences(phylogeny, taxa_labels: tuple[str, ...]) -> dict[str, str
             raise ValueError(f"Empty sequence for taxon '{taxon}'")
         sequences[taxon] = cleaned_sequence
     return sequences
+
+
+def _find_max_sequence_length(xml_path: Path, taxa_labels: tuple[str, ...]) -> int:
+    max_length = 0
+    for phylogeny in Phylo.parse(str(xml_path), "phyloxml"):
+        sequence_map = _extract_sequences(phylogeny, taxa_labels)
+        for sequence_value in sequence_map.values():
+            max_length = max(max_length, len(sequence_value))
+    return max_length
 
 
 def _parse_args() -> argparse.Namespace:
