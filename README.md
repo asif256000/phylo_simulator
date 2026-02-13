@@ -93,7 +93,7 @@ Parses PhyloXML files and converts to NumPy arrays. Features:
 - Branch length extraction
 - Topology encoding
 - Support for 2–4 taxa datasets
-- Padding (`+`) and gap (`-`) channels for indel-enabled datasets
+- Gap (`-`) channel for indel-enabled datasets; padding rows are all zeros
 
 **Quick command**:
 ```bash

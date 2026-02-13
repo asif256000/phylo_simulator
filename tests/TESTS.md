@@ -220,16 +220,16 @@ This document summarizes test inputs, fixtures, and expectations for the test su
   - Expect: ValueError
 
 - **test_one_hot_encode_supports_gap_when_enabled**
-  - Inputs: "AT+-C" with include_gap true
-  - Expect: shape (5, 6), padding channel index 4, gap channel index 5, ValueError when include_gap false
+  - Inputs: "AT-C" with include_gap true
+  - Expect: shape (4, 5), gap channel index 4, ValueError when include_gap false
 
 - **test_write_dataset_uses_gap_channel**
   - Inputs: indel-enabled config, sequences length 4 with '-' gaps
-  - Expect: X shape (2, 4, 6), gap channel set for '-' positions
+  - Expect: X shape (2, 4, 5), gap channel set for '-' positions
 
 - **test_write_dataset_pads_shorter_sequences**
-  - Inputs: indel-enabled config with sequence length 5, shorter sequences
-  - Expect: X shape (2, 5, 6), padding channel set on padded positions
+  - Inputs: indel-enabled config with sequence length 5, two trees with equal lengths per tree (length 2 and length 3)
+  - Expect: X shape (2, 5, 5), rows past each tree's length are all zeros
 
 - **test_branch_mapping_three_taxa**
   - Inputs: rooted 3 taxa branches mapping

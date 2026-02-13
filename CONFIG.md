@@ -388,7 +388,7 @@ simulation:
 **Type**: Object/mapping  
 **Required**: No  
 **Default**: `{ enabled: false, rates: null }`  
-**Description**: Configuration for indel (insertion/deletion) simulation. When enabled, indels are simulated along branches and the resulting alignment is stored in the output dataset with dedicated padding (`+`) and gap (`-`) channels. Padding is applied during NumPy dataset creation, not in the XML output.
+**Description**: Configuration for indel (insertion/deletion) simulation. When enabled, indels are simulated along branches and the resulting alignment is stored in the output dataset with a dedicated gap (`-`) channel. Padding is applied during NumPy dataset creation as all-zero rows, not in the XML output.
 
 ---
 
@@ -401,7 +401,7 @@ simulation:
 
 **Possible Values**:
 - `false` - No indels; sequences remain unaligned
-- `true` - Simulate indels; alignment with padding and gap channels is recorded
+- `true` - Simulate indels; alignment with a gap channel is recorded
 
 **Example**:
 ```yaml
