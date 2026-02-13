@@ -85,6 +85,10 @@ This document summarizes test inputs, fixtures, and expectations for the test su
   - Inputs: indel-enabled config, sequences with '-' gaps
   - Expect: FASTA output preserves '-' characters
 
+- **test_verify_sequences_pads_when_enabled**
+  - Inputs: indel-enabled config, verify.padding_for_fasta true, two trees with different lengths
+  - Expect: FASTA sequences padded with '*' to global max length
+
 - **test_verify_sequences_module_with_custom_xml_directory**
   - Inputs: custom xml_directory
   - Expect: FASTA output path under custom directory and correct contents

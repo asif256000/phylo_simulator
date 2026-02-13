@@ -150,6 +150,8 @@ python -m src.data_generation.verify_sequences --config path/to/your/config.yaml
 
 This emits `<xml_directory>/verify/<output_name>_sequences.fasta` containing all sequences in FASTA format.
 
+If `verify.padding_for_fasta: true`, sequences are padded with `*` to the maximum length observed across the XML file.
+
 #### FASTA Format
 
 Each sequence header includes the taxon label suffixed with underscore and tree index (1-based). For example, with taxa `[A, B, C]` and 2 trees:

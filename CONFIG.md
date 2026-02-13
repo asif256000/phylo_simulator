@@ -12,6 +12,7 @@ A configuration file specifies how phylogenetic trees and sequences are generate
 4. **`sequence`** - Sequence simulation parameters
 5. **`simulation`** - Backend and simulation options
 6. **`dataset`** - Output locations and counts
+7. **`verify`** - Verification output options
 
 ---
 
@@ -575,6 +576,21 @@ dataset:
 
 ## Example Configurations
 
+## Verify Configuration (`verify`)
+
+### `verify.padding_for_fasta`
+
+**Type**: Boolean  
+**Required**: No  
+**Default**: `false`  
+**Description**: When `true`, the FASTA output produced by `verify_sequences` pads sequences with `*` to the maximum length across all sequences in the XML file.
+
+**Example**:
+```yaml
+verify:
+  padding_for_fasta: true
+```
+
 ### Minimal Two-Taxa Configuration (IQ-TREE)
 
 ```yaml
@@ -724,6 +740,7 @@ The configuration parser performs extensive validation and raises `Configuration
 | `simulation.indel.enabled` | `false` |
 | `simulation.indel.rates` | `null` |
 | `simulation.indel.sizes` | `null` |
+| `verify.padding_for_fasta` | `false` |
 | `dataset.tree_count` | `1` |
 | `dataset.tree_chunk_size` | `10000` |
 | `dataset.xml_directory` | `null` (resolves to `xml_data/`) |
