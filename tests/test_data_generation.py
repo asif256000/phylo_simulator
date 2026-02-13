@@ -319,6 +319,49 @@ def test_verify_sequences_preserves_gaps(monkeypatch: pytest.MonkeyPatch, tmp_pa
     ]
 
 
+def test_verify_sequences_pads_when_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    payload = build_payload(
+        seed=15,
+        taxa_labels=["A", "B"],
+        topologies=["(A,:B)"],
+        sequence_length=4,
+        tree_count=2,
+        output_name="padded",
+        branch_length_distributions={"uniform": 1.0},
+        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
+        simulation=iqtree_simulation(indel_enabled=True, indel_rates=[0.02, 0.02]),
+        verify_padding_for_fasta=True,
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    counter = {"index": 0}
+
+    def fake_sim(*args, **kwargs):
+        counter["index"] += 1
+        if counter["index"] == 1:
+            return {"A": "A--", "B": "TT-"}
+        return {"A": "A----", "B": "TT---"}
+
+    monkeypatch.setattr(TreeSequenceGenerator, "_simulate_with_iqtree", fake_sim)
+
+    generator.write_xml()
+    output_path = verify_sequences_from_config(config_path)
+    contents = output_path.read_text().strip().splitlines()
+    assert contents == [
+        ">A_1",
+        "A--**",
+        ">B_1",
+        "TT-**",
+        ">A_2",
+        "A----",
+        ">B_2",
+        "TT---",
+    ]
+
+
 def test_verify_sequences_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     custom_xml_dir = str(tmp_path / "custom_xml")
     payload = build_payload(

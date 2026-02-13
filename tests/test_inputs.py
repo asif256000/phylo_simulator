@@ -72,6 +72,7 @@ def build_payload(
     split_root_branch: bool = True,
     parallel_cores: int = 1,
     simulation: Mapping[str, Any] | None = None,
+    verify_padding_for_fasta: bool | None = None,
     xml_directory: str | None = None,
     npy_directory: str | None = None,
     tree_chunk_size: int | None = None,
@@ -98,6 +99,8 @@ def build_payload(
         payload["dataset"]["npy_directory"] = npy_directory
     if tree_chunk_size is not None:
         payload["dataset"]["tree_chunk_size"] = tree_chunk_size
+    if verify_padding_for_fasta is not None:
+        payload["verify"] = {"padding_for_fasta": verify_padding_for_fasta}
 
     return payload
 
@@ -116,6 +119,7 @@ def uniform_payload(
     parallel_cores: int = 1,
     model: str = "JC",
     simulation: Mapping[str, Any] | None = None,
+    verify_padding_for_fasta: bool | None = None,
     xml_directory: str | None = None,
     npy_directory: str | None = None,
     tree_chunk_size: int | None = None,
@@ -134,6 +138,7 @@ def uniform_payload(
         split_root_branch=split_root_branch,
         parallel_cores=parallel_cores,
         simulation=simulation,
+        verify_padding_for_fasta=verify_padding_for_fasta,
         xml_directory=xml_directory,
         npy_directory=npy_directory,
         tree_chunk_size=tree_chunk_size,
