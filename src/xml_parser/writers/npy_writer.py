@@ -124,13 +124,19 @@ def _encode_example(
             f"expected {expected_taxa}, observed {len(example.clades)}"
         )
 
-    encoded = np.empty((expected_taxa, sequence_length, channel_count), dtype=np.uint8)
+    encoded = np.zeros((expected_taxa, sequence_length, channel_count), dtype=np.uint8)
 
     for clade_index, clade in enumerate(example.clades):
         try:
             sequence_value = clade.sequence
             if include_gap and len(sequence_value) < sequence_length:
-                sequence_value = sequence_value + "+" * (sequence_length - len(sequence_value))
+                prefix_encoding = one_hot_encode(
+                    sequence_value,
+                    len(sequence_value),
+                    include_gap=include_gap,
+                )
+                encoded[clade_index, : len(sequence_value), :] = prefix_encoding
+                continue
             if len(sequence_value) != sequence_length:
                 raise ValueError(
                     f"Sequence length mismatch: expected {sequence_length}, observed {len(sequence_value)}"

@@ -6,18 +6,16 @@ import torch
 import torch.nn.functional as F
 
 NUCLEOTIDE_ORDER: tuple[str, ...] = ("A", "T", "G", "C")
-PADDING_SYMBOL: str = "+"
 GAP_SYMBOL: str = "-"
 NUCLEOTIDE_TO_INDEX: Mapping[str, int] = {nt: idx for idx, nt in enumerate(NUCLEOTIDE_ORDER)}
 NUCLEOTIDE_TO_INDEX_WITH_GAP: Mapping[str, int] = {
     **NUCLEOTIDE_TO_INDEX,
-    PADDING_SYMBOL: len(NUCLEOTIDE_ORDER),
-    GAP_SYMBOL: len(NUCLEOTIDE_ORDER) + 1,
+    GAP_SYMBOL: len(NUCLEOTIDE_ORDER),
 }
 
 
 def nucleotide_channel_count(include_gap: bool) -> int:
-    return len(NUCLEOTIDE_ORDER) + (2 if include_gap else 0)
+    return len(NUCLEOTIDE_ORDER) + (1 if include_gap else 0)
 
 
 @dataclass
@@ -42,7 +40,7 @@ class TreeExample:
 def one_hot_encode(sequence: str, seq_length: int, *, include_gap: bool = False) -> np.ndarray:
     """Convert a nucleotide string into an LxC one-hot matrix using PyTorch.
 
-    When include_gap is True, both padding ('+') and gap ('-') symbols are supported.
+    When include_gap is True, the gap ('-') symbol is supported.
     """
     if len(sequence) != seq_length:
         raise ValueError(f"Sequence length mismatch: expected {seq_length}, observed {len(sequence)}")
