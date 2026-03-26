@@ -84,7 +84,7 @@ tree:
 **Type**: Mapping of distribution name (string) to weight (positive float)  
 **Required**: Yes  
 **Default**: None  
-**Description**: Mixture of branch length distributions with weights. Each weight must be positive, and all weights together must sum to 1.0 (the parser will error if they don't). Distributions are assigned **per tree** using the requested weights, then balanced across configured topologies. The generator may produce more trees than `dataset.tree_count` to ensure equal counts for every topology-distribution combination.
+**Description**: Mixture of branch length distributions with weights. Each weight is positive, and all weights sum to 1.0. Distributions are assigned **per tree** using the configured weights, then expanded into balanced topology-distribution blocks.
 
 **Supported Distributions**:
 - `uniform` - Uniform distribution over a specified range
@@ -97,9 +97,9 @@ tree:
 - Non-integer weights are supported (e.g., 0.33, 0.67)
 
 **Balancing rules**:
-- For each distribution, the minimum count is $\lceil weight \times tree\_count \rceil$.
-- Counts are then distributed evenly across topologies.
-- If equal distribution requires rounding up, the total number of generated trees will increase beyond `dataset.tree_count`.
+- For each distribution, the assigned count is $\lceil weight \times tree\_count \rceil$.
+- The assigned count is expanded to complete topology cycles within that distribution.
+- `dataset.tree_count` defines the minimum generated tree count for the dataset.
 
 
 **Example**:
@@ -465,7 +465,7 @@ The `dataset` section specifies output locations and the number of trees to gene
 **Type**: Positive integer  
 **Required**: No  
 **Default**: `1`  
-**Description**: Minimum number of trees (and associated sequence alignments) to generate in this dataset. When multiple branch length distributions and topologies are configured, the generator may round up to keep the number of trees per topology-distribution combination balanced.
+**Description**: Minimum number of trees (and associated sequence alignments) to generate in this dataset. Tree generation uses balanced topology-distribution blocks.
 
 **Constraints**:
 - Must be a positive integer (> 0)
@@ -759,8 +759,12 @@ When a tree is rooted and `split_root_branch: true` (the default), the unrooted 
 
 This ensures the split branch respects the range constraints while maintaining a consistent total.
 
-### Two-Taxon Unrooted Trees
-For unrooted two-taxon trees, only a single branch segment is generated and attached to the first taxon in the topology. The second taxon receives an implicit zero-length edge, representing the midpoint branch length.
+### Unrooted Connector Assignment
+For unrooted trees, one connector segment is assigned at the root representation, and one root-side edge is implicit.
+
+- Two taxa: one explicit branch segment is assigned to the first taxon side; the opposite side is implicit.
+- Three or more taxa: subtree sizes at the two root children determine which side is implicit. The larger subtree side is implicit, and the connector segment is assigned to the other side.
+- Equal-size root children use a deterministic tie-break based on the first configured taxon.
 
 ### Topology Deduplication
 If multiple identical topologies are provided, the generator silently deduplicates them. The deduplication uses the full topology structure (including `:` markers for rooted trees), so `(A,:B)` and `(B,:A)` are considered different.
