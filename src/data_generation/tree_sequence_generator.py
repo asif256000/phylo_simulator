@@ -260,23 +260,14 @@ class TreeSequenceGenerator:
         topology_count = len(candidates)
         scheduled: list[tuple[TopologySpec, str]] = []
 
-        # Build a schedule that honors the requested tree_count exactly.
+        # Round each distribution target up, then round again to full topology cycles.
+        # This keeps distribution-topology combinations balanced and can exceed tree_count.
         for dist_name, weight in distributions:
-            target = round(weight * tree_count)
-            if target == 0 and weight > 0:
-                target = 1  # ensure a non-zero representation for small but present weights
-            for index in range(target):
-                scheduled.append((candidates[index % topology_count], dist_name))
-
-        # Adjust to match tree_count exactly by trimming or padding deterministically.
-        if len(scheduled) > tree_count:
-            scheduled = scheduled[:tree_count]
-        elif len(scheduled) < tree_count:
-            # Cycle through candidates using the first distribution name to fill the gap.
-            fallback_dist = distributions[0][0]
-            start = len(scheduled)
-            for index in range(tree_count - start):
-                scheduled.append((candidates[index % topology_count], fallback_dist))
+            target = max(1, math.ceil(weight * tree_count))
+            per_topology = math.ceil(target / topology_count)
+            for topology in candidates:
+                for _ in range(per_topology):
+                    scheduled.append((topology, dist_name))
 
         self._rng.shuffle(scheduled)
         return scheduled
@@ -337,19 +328,57 @@ class TreeSequenceGenerator:
         if segment_count <= 0:
             return
 
-        if num_taxa in {2, 3, 4}:
-            self._assign_small_tree_branch_lengths(root, topology, segment_count)
-            return
-
         samples = [self._sample_branch_length() for _ in range(segment_count)]
         length_iter = iter(samples)
         flattened = flatten_topology(topology)
         first_taxon = flattened[0] if flattened else None
 
-        if self.config.tree.rooted and len(root.clades) >= 2:
-            self._assign_rooted_branch_lengths(root, length_iter)
-        else:
+        if self.config.tree.rooted:
+            self._assign_rooted_from_unrooted(root, topology, length_iter, first_taxon)
+            return
+
+        self._assign_unrooted_branch_lengths(root, length_iter, first_taxon)
+
+    def _assign_rooted_from_unrooted(
+        self,
+        root: Clade,
+        topology: TopologySpec,
+        length_iter: Iterator[float],
+        first_taxon: str | None,
+    ) -> None:
+        children = list(root.clades)
+        if len(children) != 2:
             self._assign_unrooted_branch_lengths(root, length_iter, first_taxon)
+            return
+
+        try:
+            connector_length = next(length_iter)
+        except StopIteration as exc:  # pragma: no cover - defensive guard
+            raise RuntimeError("Missing branch length sample for rooted split connector") from exc
+
+        target_child = self._root_side_child(root, topology)
+        if target_child is None:
+            target_child = self._child_containing_taxon(root, first_taxon)
+
+        if target_child is children[0]:
+            children[0].branch_length = connector_length
+            children[1].branch_length = None
+        elif target_child is children[1]:
+            children[0].branch_length = None
+            children[1].branch_length = connector_length
+        else:
+            children[0].branch_length = connector_length
+            children[1].branch_length = None
+
+        for child in children:
+            self._populate_branch_lengths(child, length_iter)
+
+        self._split_root_children(
+            root,
+            connector_length,
+            target_child=target_child,
+            enforce_min=True,
+        )
 
     def _assign_small_tree_branch_lengths(self, root: Clade, topology: TopologySpec, segment_count: int) -> None:
         samples = [self._sample_branch_length() for _ in range(segment_count)]
@@ -534,20 +563,40 @@ class TreeSequenceGenerator:
             except StopIteration as exc:  # pragma: no cover - defensive guard
                 raise RuntimeError("Missing branch length sample for unrooted connector") from exc
 
-            if connector_length <= 0:
-                split_value = 0.0
+            implicit_child = self._select_unrooted_implicit_child(root, first_taxon)
+            if implicit_child is children[0]:
+                children[0].branch_length = None
+                children[1].branch_length = connector_length
+            elif implicit_child is children[1]:
+                children[0].branch_length = connector_length
+                children[1].branch_length = None
             else:
-                split_value = self._rng.uniform(0.0, connector_length)
-            remainder = max(connector_length - split_value, 0.0)
+                # If selection fails unexpectedly, keep behavior deterministic.
+                children[0].branch_length = connector_length
+                children[1].branch_length = None
 
-            if self._rng.random() < 0.5:
-                children[0].branch_length = split_value
-                children[1].branch_length = remainder
-            else:
-                children[0].branch_length = remainder
-                children[1].branch_length = split_value
+            # For unrooted trees represented with two root children, keep one side
+            # implicit (no branch length) and only populate descendant edges.
+            for child in children:
+                self._populate_branch_lengths(child, length_iter)
+            return
 
         self._populate_branch_lengths(root, length_iter)
+
+    def _select_unrooted_implicit_child(self, root: Clade, first_taxon: str | None) -> Clade | None:
+        children = list(root.clades)
+        if len(children) != 2:
+            return None
+
+        left_count = len(children[0].get_terminals())
+        right_count = len(children[1].get_terminals())
+        if left_count > right_count:
+            return children[0]
+        if right_count > left_count:
+            return children[1]
+
+        preferred = self._child_containing_taxon(root, first_taxon)
+        return preferred if preferred is not None else children[0]
 
     def _populate_branch_lengths(self, clade: Clade, length_iter: Iterator[float]) -> None:
         for child in clade.clades:
