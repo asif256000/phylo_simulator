@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import math
+from typing import Any
 
 import pytest
 from Bio import Phylo
@@ -19,6 +20,60 @@ from tests.test_inputs import (
     iqtree_simulation,
     seqgen_simulation,
 )
+
+
+def _write_config_and_build_generator(
+    tmp_path: Path,
+    payload: dict,
+) -> tuple[Path, GenerationConfig, TreeSequenceGenerator]:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+    return config_path, config, generator
+
+
+def _patch_iqtree_sequences(monkeypatch: pytest.MonkeyPatch, sequences: dict[str, str]) -> None:
+    monkeypatch.setattr(
+        TreeSequenceGenerator,
+        "_simulate_with_iqtree",
+        lambda self, *args, **kwargs: dict(sequences),
+    )
+
+
+def _patch_sample_sequence(monkeypatch: pytest.MonkeyPatch, samples: list[float]) -> None:
+    iterator = iter(samples)
+
+    def fake_sample(self):  # type: ignore[override]
+        return next(iterator)
+
+    monkeypatch.setattr(TreeSequenceGenerator, "_sample_branch_length", fake_sample)
+
+
+def _uniform_two_taxa_rooted_payload(
+    *,
+    seed: int,
+    sequence_length: int,
+    tree_count: int,
+    output_name: str,
+    uniform_range: tuple[float, float] = (0.1, 1.0),
+    branch_length_distributions: dict[str, float] | None = None,
+    branch_length_params: dict[str, dict[str, float]] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    distributions = branch_length_distributions or {"uniform": 1.0}
+    params = branch_length_params or {"uniform": {"range": [uniform_range[0], uniform_range[1]]}}
+    return build_payload(
+        seed=seed,
+        taxa_labels=["A", "B"],
+        topologies=["(A,:B)"],
+        sequence_length=sequence_length,
+        tree_count=tree_count,
+        output_name=output_name,
+        branch_length_distributions=distributions,
+        branch_length_params=params,
+        **kwargs,
+    )
 
 
 def test_generate_tree_and_sequences(monkeypatch: pytest.MonkeyPatch, generation_config: GenerationConfig) -> None:
@@ -49,7 +104,7 @@ def test_generate_tree_and_sequences(monkeypatch: pytest.MonkeyPatch, generation
     assert result.topology in generation_config.tree.topologies
 
 
-def test_generate_phylogenies_respects_count(monkeypatch: pytest.MonkeyPatch, generation_config: GenerationConfig) -> None:
+def test_generate_phylogenies_meets_minimum_count(monkeypatch: pytest.MonkeyPatch, generation_config: GenerationConfig) -> None:
     generator = TreeSequenceGenerator(generation_config)
 
     def fake_sim(*args, **kwargs):  # pragma: no cover - patched within test
@@ -61,7 +116,7 @@ def test_generate_phylogenies_respects_count(monkeypatch: pytest.MonkeyPatch, ge
     monkeypatch.setattr(TreeSequenceGenerator, "_simulate_with_iqtree", fake_sim)
 
     phylogenies, aligned = generator.generate_phylogenies()
-    assert len(phylogenies) == generation_config.dataset.tree_count
+    assert len(phylogenies) >= generation_config.dataset.tree_count
     assert aligned
     for phylogeny in phylogenies:
         assert isinstance(phylogeny, Phylo.PhyloXML.Phylogeny)
@@ -89,25 +144,16 @@ def test_write_xml_creates_expected_phyloxml(monkeypatch: pytest.MonkeyPatch, ge
 
 
 def test_verify_module_emits_newick_dump(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=7,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=6,
         tree_count=2,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    generator = TreeSequenceGenerator(config)
-
-    monkeypatch.setattr(
-        TreeSequenceGenerator,
-        "_simulate_with_iqtree",
-        lambda self, *args, **kwargs: {
+    config_path, config, generator = _write_config_and_build_generator(tmp_path, payload)
+    _patch_iqtree_sequences(
+        monkeypatch,
+        {
             "A": "A" * config.sequence.length,
             "B": "C" * config.sequence.length,
         },
@@ -125,25 +171,16 @@ def test_verify_module_emits_newick_dump(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 def test_verify_module_with_custom_output_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=8,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=6,
         tree_count=2,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    generator = TreeSequenceGenerator(config)
-
-    monkeypatch.setattr(
-        TreeSequenceGenerator,
-        "_simulate_with_iqtree",
-        lambda self, *args, **kwargs: {
+    config_path, config, generator = _write_config_and_build_generator(tmp_path, payload)
+    _patch_iqtree_sequences(
+        monkeypatch,
+        {
             "A": "A" * config.sequence.length,
             "B": "C" * config.sequence.length,
         },
@@ -161,15 +198,11 @@ def test_verify_module_with_custom_output_path(monkeypatch: pytest.MonkeyPatch, 
 
 
 def test_verify_module_raises_when_xml_missing(tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=8,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=6,
         tree_count=2,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
     )
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
@@ -179,15 +212,11 @@ def test_verify_module_raises_when_xml_missing(tmp_path: Path) -> None:
 
 
 def test_indel_sizes_parsed_from_config(tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=21,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=1,
         output_name="indel_sizes",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
         simulation=iqtree_simulation(
             indel_enabled=True,
             indel_rates=[0.02, 0.03],
@@ -202,26 +231,17 @@ def test_indel_sizes_parsed_from_config(tmp_path: Path) -> None:
 def test_verify_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test that verify module uses custom xml_directory when specified."""
     custom_xml_dir = str(tmp_path / "my_custom_xml")
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=7,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=6,
         tree_count=2,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
         xml_directory=custom_xml_dir,
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    generator = TreeSequenceGenerator(config)
-
-    monkeypatch.setattr(
-        TreeSequenceGenerator,
-        "_simulate_with_iqtree",
-        lambda self, *args, **kwargs: {
+    config_path, config, generator = _write_config_and_build_generator(tmp_path, payload)
+    _patch_iqtree_sequences(
+        monkeypatch,
+        {
             "A": "A" * config.sequence.length,
             "B": "C" * config.sequence.length,
         },
@@ -239,25 +259,16 @@ def test_verify_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch
 
 
 def test_verify_sequences_module_emits_fasta_dump(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=11,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=5,
         tree_count=2,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    generator = TreeSequenceGenerator(config)
-
-    monkeypatch.setattr(
-        TreeSequenceGenerator,
-        "_simulate_with_iqtree",
-        lambda self, *args, **kwargs: {
+    config_path, config, generator = _write_config_and_build_generator(tmp_path, payload)
+    _patch_iqtree_sequences(
+        monkeypatch,
+        {
             "A": "A" * config.sequence.length,
             "B": "C" * config.sequence.length,
         },
@@ -283,26 +294,17 @@ def test_verify_sequences_module_emits_fasta_dump(monkeypatch: pytest.MonkeyPatc
 
 
 def test_verify_sequences_preserves_gaps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=12,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=1,
         output_name="gapped",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
         simulation=iqtree_simulation(indel_enabled=True, indel_rates=[0.02, 0.02]),
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    generator = TreeSequenceGenerator(config)
-
-    monkeypatch.setattr(
-        TreeSequenceGenerator,
-        "_simulate_with_iqtree",
-        lambda self, *args, **kwargs: {
+    config_path, _config, generator = _write_config_and_build_generator(tmp_path, payload)
+    _patch_iqtree_sequences(
+        monkeypatch,
+        {
             "A": "A--T",
             "B": "TT-A",
         },
@@ -320,22 +322,15 @@ def test_verify_sequences_preserves_gaps(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 def test_verify_sequences_pads_when_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=15,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=2,
         output_name="padded",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
         simulation=iqtree_simulation(indel_enabled=True, indel_rates=[0.02, 0.02]),
         verify_padding_for_fasta=True,
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    generator = TreeSequenceGenerator(config)
+    config_path, _config, generator = _write_config_and_build_generator(tmp_path, payload)
 
     counter = {"index": 0}
 
@@ -364,26 +359,17 @@ def test_verify_sequences_pads_when_enabled(monkeypatch: pytest.MonkeyPatch, tmp
 
 def test_verify_sequences_module_with_custom_xml_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     custom_xml_dir = str(tmp_path / "custom_xml")
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=13,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=2,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
         xml_directory=custom_xml_dir,
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    generator = TreeSequenceGenerator(config)
-
-    monkeypatch.setattr(
-        TreeSequenceGenerator,
-        "_simulate_with_iqtree",
-        lambda self, *args, **kwargs: {
+    config_path, config, generator = _write_config_and_build_generator(tmp_path, payload)
+    _patch_iqtree_sequences(
+        monkeypatch,
+        {
             "A": "A" * config.sequence.length,
             "B": "C" * config.sequence.length,
         },
@@ -409,15 +395,12 @@ def test_verify_sequences_module_with_custom_xml_directory(monkeypatch: pytest.M
 
 
 def test_seqgen_stdout_parsing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=5,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=1,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 0.2]}},
+        uniform_range=(0.1, 0.2),
         simulation=seqgen_simulation(),
     )
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
@@ -460,15 +443,12 @@ def test_seqgen_stdout_parsing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
 
 def test_seqgen_reads_output_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=5,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=1,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 0.2]}},
+        uniform_range=(0.1, 0.2),
         simulation=seqgen_simulation(),
     )
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
@@ -503,15 +483,12 @@ def test_seqgen_reads_output_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
 
 def test_seqgen_rejects_multiple_replicates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=5,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=1,
         output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 0.2]}},
+        uniform_range=(0.1, 0.2),
         simulation=seqgen_simulation(),
     )
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
@@ -593,10 +570,8 @@ def test_topology_rejects_duplicate_taxa(tmp_path: Path) -> None:
 
 def test_branch_length_distribution_validation(tmp_path: Path) -> None:
     """Test that invalid distribution names are rejected."""
-    payload = build_payload(
+    payload = _uniform_two_taxa_rooted_payload(
         seed=12,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
         sequence_length=4,
         tree_count=1,
         output_name="generated",
@@ -717,7 +692,8 @@ def test_indel_sizes_passed_to_iqtree(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert captured["indel_size"] == ("POW{1.5/50}", "GEO{5}")
 
 
-def test_split_root_branch_flag_parsing(tmp_path: Path) -> None:
+@pytest.mark.parametrize("split_value", [False, "false"])
+def test_split_root_branch_flag_parsing(split_value: bool | str, tmp_path: Path) -> None:
     payload = build_payload(
         seed=12,
         taxa_labels=["A", "B", "C"],
@@ -729,6 +705,7 @@ def test_split_root_branch_flag_parsing(tmp_path: Path) -> None:
         branch_length_params={"uniform": {"range": [0.1, 0.3]}},
         split_root_branch=False,
     )
+    payload["tree"]["split_root_branch"] = split_value
 
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     assert config.tree.split_root_branch is False
@@ -759,9 +736,70 @@ def test_topology_cycle_even_distribution(monkeypatch: pytest.MonkeyPatch, tmp_p
 
     phylogenies, _ = generator.generate_phylogenies()
     observed = [phylogeny.other[0].value for phylogeny in phylogenies]
-    assert len(observed) == 5
+    assert len(observed) == 6
     assert observed.count("((A,B),:C)") == 3
+    assert observed.count("((A,C),:B)") == 3
+
+
+def test_multi_distribution_balances_topology_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = build_payload(
+        seed=14,
+        taxa_labels=["A", "B", "C"],
+        topologies=["((A,B),:C)", "((A,C),:B)", "((B,C),:A)"],
+        sequence_length=6,
+        tree_count=1,
+        output_name="generated",
+        branch_length_distributions={"uniform": 0.5, "exponential": 0.5},
+        branch_length_params={
+            "uniform": {"range": [0.1, 0.2]},
+            "exponential": {"rate": 2.0},
+        },
+    )
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    def fake_sim(*args, **kwargs):
+        return {
+            "A": "A" * config.sequence.length,
+            "B": "C" * config.sequence.length,
+            "C": "G" * config.sequence.length,
+        }
+
+    monkeypatch.setattr(TreeSequenceGenerator, "_simulate_with_iqtree", fake_sim)
+
+    phylogenies, _ = generator.generate_phylogenies()
+    observed = [phylogeny.other[0].value for phylogeny in phylogenies]
+
+    # tree_count=1 becomes 3 topologies x 2 distributions = 6 balanced trees.
+    assert len(observed) == 6
+    assert observed.count("((A,B),:C)") == 2
     assert observed.count("((A,C),:B)") == 2
+    assert observed.count("((B,C),:A)") == 2
+
+
+def test_rooted_string_false_parses_as_unrooted(tmp_path: Path) -> None:
+    payload = build_payload(
+        seed=13,
+        taxa_labels=["A", "B", "C"],
+        topologies=["((A,B),C)"],
+        sequence_length=4,
+        tree_count=1,
+        output_name="generated",
+        branch_length_distributions={"uniform": 1.0},
+        branch_length_params={"uniform": {"range": [0.1, 0.2]}},
+        rooted=False,
+    )
+    payload["tree"]["rooted"] = "false"
+
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+    tree, _ = generator._build_tree(topology_override=config.tree.topologies[0])
+
+    assert config.tree.rooted is False
+    assert tree.rooted is False
 
 
 def test_root_insertion_preserves_neighbor_pairs(tmp_path: Path) -> None:
@@ -831,12 +869,7 @@ def test_root_split_preserves_total_length(monkeypatch: pytest.MonkeyPatch, tmp_
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     generator = TreeSequenceGenerator(config)
 
-    samples = iter([0.5, 0.4, 0.4])
-
-    def fake_sample(self):  # type: ignore[override]
-        return next(samples)
-
-    monkeypatch.setattr(TreeSequenceGenerator, "_sample_branch_length", fake_sample)
+    _patch_sample_sequence(monkeypatch, [0.5, 0.4, 0.4])
     monkeypatch.setattr(generator._rng, "uniform", lambda low, high: (low + high) / 2 if high > low else high)
 
     tree, _ = generator._build_tree(topology_override=config.tree.topologies[0])
@@ -860,12 +893,7 @@ def test_rooted_no_split_draws_independent_edges(monkeypatch: pytest.MonkeyPatch
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
     generator = TreeSequenceGenerator(config)
 
-    samples = iter([0.1, 0.2, 0.3, 0.4])
-
-    def fake_sample(self):  # type: ignore[override]
-        return next(samples)
-
-    monkeypatch.setattr(TreeSequenceGenerator, "_sample_branch_length", fake_sample)
+    _patch_sample_sequence(monkeypatch, [0.1, 0.2, 0.3, 0.4])
 
     tree, _ = generator._build_tree(topology_override=config.tree.topologies[0])
 
@@ -898,6 +926,90 @@ def test_unrooted_two_taxa_assigns_single_branch(tmp_path: Path) -> None:
     assert first_child.branch_length is not None
     assert other_child.branch_length is None
     assert math.isclose(lengths[0], first_child.branch_length, rel_tol=1e-9)
+
+
+def test_unrooted_connector_not_split(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    payload = build_payload(
+        seed=19,
+        taxa_labels=["A", "B", "C", "D"],
+        topologies=["((A,B),(C,D))"],
+        sequence_length=5,
+        tree_count=1,
+        output_name="generated",
+        branch_length_distributions={"uniform": 1.0},
+        branch_length_params={"uniform": {"range": [0.1, 0.9]}},
+        rooted=False,
+    )
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    _patch_sample_sequence(monkeypatch, [0.5, 0.1, 0.2, 0.3, 0.4])
+    tree, _ = generator._build_tree(topology_override=config.tree.topologies[0])
+
+    left_child, right_child = tree.root.clades
+    branch_lengths_at_root = [left_child.branch_length, right_child.branch_length]
+    assert branch_lengths_at_root.count(0.5) == 1
+    assert branch_lengths_at_root.count(None) == 1
+
+
+def test_unrooted_three_taxa_connector_on_non_first_taxon_side(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = build_payload(
+        seed=23,
+        taxa_labels=["A", "B", "C"],
+        topologies=["((A,B),C)"],
+        sequence_length=5,
+        tree_count=1,
+        output_name="generated",
+        branch_length_distributions={"uniform": 1.0},
+        branch_length_params={"uniform": {"range": [0.1, 0.9]}},
+        rooted=False,
+    )
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    _patch_sample_sequence(monkeypatch, [0.13, 0.1, 0.2])
+    tree, _ = generator._build_tree(topology_override=config.tree.topologies[0])
+
+    child_with_first_taxon = next(
+        child for child in tree.root.clades if any(leaf.name == "A" for leaf in child.get_terminals())
+    )
+    other_child = next(child for child in tree.root.clades if child is not child_with_first_taxon)
+
+    assert child_with_first_taxon.branch_length is None
+    assert other_child.branch_length == pytest.approx(0.13)
+
+
+def test_unrooted_four_taxa_ladder_connector_on_single_taxon_side(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = build_payload(
+        seed=29,
+        taxa_labels=["A", "B", "C", "D"],
+        topologies=["(A,(B,(C,D)))"],
+        sequence_length=5,
+        tree_count=1,
+        output_name="generated",
+        branch_length_distributions={"uniform": 1.0},
+        branch_length_params={"uniform": {"range": [0.1, 0.9]}},
+        rooted=False,
+    )
+    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
+    generator = TreeSequenceGenerator(config)
+
+    _patch_sample_sequence(monkeypatch, [0.45, 0.11, 0.22, 0.33, 0.44])
+    tree, _ = generator._build_tree(topology_override=config.tree.topologies[0])
+
+    child_with_A = next(
+        child for child in tree.root.clades if any(leaf.name == "A" for leaf in child.get_terminals())
+    )
+    other_child = next(child for child in tree.root.clades if child is not child_with_A)
+
+    assert child_with_A.branch_length == pytest.approx(0.45)
+    assert other_child.branch_length is None
 
 
 def test_three_taxa_tree_respects_topology(tmp_path: Path) -> None:
@@ -987,9 +1099,22 @@ def test_topology_validation_requires_all_taxa(tmp_path: Path) -> None:
         GenerationConfig.from_mapping(payload, base_path=tmp_path)
 
 
-def test_custom_xml_directory(tmp_path: Path) -> None:
-    """Test that custom xml_directory is respected."""
-    custom_xml_dir = str(tmp_path / "custom_xml")
+@pytest.mark.parametrize(
+    ("xml_directory", "npy_directory", "expected_xml", "expected_npy"),
+    (
+        ("custom_xml", None, "custom_xml/generated.xml", "npy_data/generated.npy"),
+        (None, "custom_npy", "xml_data/generated.xml", "custom_npy/generated.npy"),
+        ("custom_xml", "custom_npy", "custom_xml/generated.xml", "custom_npy/generated.npy"),
+        (None, None, "xml_data/generated.xml", "npy_data/generated.npy"),
+    ),
+)
+def test_dataset_directory_resolution(
+    tmp_path: Path,
+    xml_directory: str | None,
+    npy_directory: str | None,
+    expected_xml: str,
+    expected_npy: str,
+) -> None:
     payload = build_payload(
         seed=42,
         taxa_labels=["A", "B"],
@@ -999,72 +1124,24 @@ def test_custom_xml_directory(tmp_path: Path) -> None:
         output_name="generated",
         branch_length_distributions={"uniform": 1.0},
         branch_length_params={"uniform": {"range": [0.1, 1.0]}},
-        xml_directory=custom_xml_dir,
+        xml_directory=str(tmp_path / xml_directory) if xml_directory is not None else None,
+        npy_directory=str(tmp_path / npy_directory) if npy_directory is not None else None,
     )
+
     config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    assert config.dataset.xml_directory == custom_xml_dir
-    assert config.dataset.xml_path() == Path(custom_xml_dir) / "generated.xml"
 
+    if xml_directory is None:
+        assert config.dataset.xml_directory is None
+    else:
+        assert config.dataset.xml_directory == str(tmp_path / xml_directory)
 
-def test_custom_npy_directory(tmp_path: Path) -> None:
-    """Test that custom npy_directory is respected."""
-    custom_npy_dir = str(tmp_path / "custom_npy")
-    payload = build_payload(
-        seed=42,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
-        sequence_length=8,
-        tree_count=3,
-        output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
-        npy_directory=custom_npy_dir,
-    )
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    assert config.dataset.npy_directory == custom_npy_dir
-    assert config.dataset.output_npy_path() == Path(custom_npy_dir) / "generated.npy"
+    if npy_directory is None:
+        assert config.dataset.npy_directory is None
+    else:
+        assert config.dataset.npy_directory == str(tmp_path / npy_directory)
 
-
-def test_both_custom_directories(tmp_path: Path) -> None:
-    """Test that both custom xml_directory and npy_directory are respected."""
-    custom_xml_dir = str(tmp_path / "custom_xml")
-    custom_npy_dir = str(tmp_path / "custom_npy")
-    payload = build_payload(
-        seed=42,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
-        sequence_length=8,
-        tree_count=3,
-        output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
-        xml_directory=custom_xml_dir,
-        npy_directory=custom_npy_dir,
-    )
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    assert config.dataset.xml_directory == custom_xml_dir
-    assert config.dataset.npy_directory == custom_npy_dir
-    assert config.dataset.xml_path() == Path(custom_xml_dir) / "generated.xml"
-    assert config.dataset.output_npy_path() == Path(custom_npy_dir) / "generated.npy"
-
-
-def test_default_directories_when_not_specified(tmp_path: Path) -> None:
-    """Test that default directories are used when custom directories are not specified."""
-    payload = build_payload(
-        seed=42,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
-        sequence_length=8,
-        tree_count=3,
-        output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
-    )
-    config = GenerationConfig.from_mapping(payload, base_path=tmp_path)
-    assert config.dataset.xml_directory is None
-    assert config.dataset.npy_directory is None
-    assert config.dataset.xml_path() == tmp_path / "xml_data" / "generated.xml"
-    assert config.dataset.output_npy_path() == tmp_path / "npy_data" / "generated.npy"
+    assert config.dataset.xml_path() == tmp_path / expected_xml
+    assert config.dataset.output_npy_path() == tmp_path / expected_npy
 
 
 def test_tree_chunk_size_must_be_positive(tmp_path: Path) -> None:
@@ -1083,8 +1160,18 @@ def test_tree_chunk_size_must_be_positive(tmp_path: Path) -> None:
         GenerationConfig.from_mapping(payload, base_path=tmp_path)
 
 
-def test_empty_xml_directory_raises_error(tmp_path: Path) -> None:
-    """Test that empty xml_directory string raises ConfigurationError."""
+@pytest.mark.parametrize(
+    ("build_kwargs", "error_msg"),
+    (
+        ({"xml_directory": ""}, "'dataset.xml_directory' must be a non-empty string"),
+        ({"npy_directory": ""}, "'dataset.npy_directory' must be a non-empty string"),
+    ),
+)
+def test_empty_output_directories_raise_error(
+    tmp_path: Path,
+    build_kwargs: dict[str, str],
+    error_msg: str,
+) -> None:
     payload = build_payload(
         seed=42,
         taxa_labels=["A", "B"],
@@ -1094,25 +1181,8 @@ def test_empty_xml_directory_raises_error(tmp_path: Path) -> None:
         output_name="generated",
         branch_length_distributions={"uniform": 1.0},
         branch_length_params={"uniform": {"range": [0.1, 1.0]}},
-        xml_directory="",
+        **build_kwargs,
     )
-    with pytest.raises(ConfigurationError, match="'dataset.xml_directory' must be a non-empty string"):
-        GenerationConfig.from_mapping(payload, base_path=tmp_path)
-
-
-def test_empty_npy_directory_raises_error(tmp_path: Path) -> None:
-    """Test that empty npy_directory string raises ConfigurationError."""
-    payload = build_payload(
-        seed=42,
-        taxa_labels=["A", "B"],
-        topologies=["(A,:B)"],
-        sequence_length=8,
-        tree_count=3,
-        output_name="generated",
-        branch_length_distributions={"uniform": 1.0},
-        branch_length_params={"uniform": {"range": [0.1, 1.0]}},
-        npy_directory="",
-    )
-    with pytest.raises(ConfigurationError, match="'dataset.npy_directory' must be a non-empty string"):
+    with pytest.raises(ConfigurationError, match=error_msg):
         GenerationConfig.from_mapping(payload, base_path=tmp_path)
 
