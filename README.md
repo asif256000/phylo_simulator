@@ -115,7 +115,7 @@ Key highlights:
 - **`tree`**: Taxa labels, branch length range, rooted/unrooted, topologies
 - **`sequence`**: Sequence length and evolutionary model
 - **`simulation`**: Backend choice, executable paths, optional parameters
-- **`dataset`**: Output count and naming
+- **`dataset`**: Minimum output count and naming (`tree_count` defines the minimum generated tree count; generation uses balanced topology-distribution blocks)
 
 ## Testing
 
