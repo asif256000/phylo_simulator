@@ -54,7 +54,7 @@ Rules:
 
 ### Branch Lengths
 
-The generator assigns **one distribution per tree** based on the configured weights, then balances the number of trees per distribution across all topologies. This may increase the total number of trees beyond `dataset.tree_count` to keep sampling balanced.
+The generator assigns **one distribution per tree** based on the configured weights, then expands schedules into balanced topology-distribution blocks. `dataset.tree_count` defines the minimum generated tree count.
 
 **Supported Distributions**:
 - **`uniform`**: Sample uniformly from a specified range `[min, max]`
@@ -90,9 +90,26 @@ In this example:
 - The parser will validate this during configuration loading
 
 **Balancing rules**:
-- For each distribution, the minimum count is $\lceil weight \times tree\_count \rceil$.
-- These counts are split evenly across topologies.
-- If rounding is needed, the total number of generated trees increases.
+- For each distribution, the assigned count is $\lceil weight \times tree\_count \rceil$.
+- The assigned count is expanded to complete topology cycles within that distribution.
+- The generated tree total follows the balanced schedule.
+
+### Unrooted Connector Behavior
+
+For unrooted trees, root representation uses one explicit connector segment and one implicit root-side edge.
+
+- Two taxa: the first taxon side receives the explicit segment; the opposite side is implicit.
+- Three or more taxa: the larger root-child subtree side is implicit, and the connector segment is assigned to the other side.
+- Equal-size root children use a deterministic tie-break based on the first configured taxon.
+
+### Rooted Split Flow
+
+When `tree.rooted: true` and `tree.split_root_branch: true`, branch assignment follows a two-stage flow:
+
+- Stage 1: assign unrooted segments (`2n - 3`) on the rooted representation, including one connector segment.
+- Stage 2: split the connector segment across the two root children using the configured minimum-length constraint.
+
+When `tree.split_root_branch: false`, rooted root-side edges are sampled independently.
 
 **Distribution-specific parameters**:
 - **uniform**: Must provide `range: [min, max]` where min ≥ 0, max > 0, max > min
