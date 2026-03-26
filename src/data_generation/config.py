@@ -194,7 +194,7 @@ class GenerationConfig:
         if not taxa_labels:
             raise ConfigurationError("'tree.taxa_labels' must contain at least one label")
 
-        rooted = bool(tree_payload.get("rooted", True))
+        rooted = _coerce_bool(tree_payload.get("rooted", True), field="tree.rooted")
         parsed_topologies = _parse_topologies(tree_payload.get("topologies"), taxa_labels, rooted=rooted)
         distributions_raw = tree_payload.get("branch_length_distributions")
         params_payload = tree_payload.get("branch_length_params")
@@ -275,7 +275,10 @@ class GenerationConfig:
                 parsed_params[dist_name]["max"] = max_value
             else:
                 raise ConfigurationError(f"Unsupported branch length distribution '{dist_name}'")
-        split_root_branch = bool(tree_payload.get("split_root_branch", True))
+        split_root_branch = _coerce_bool(
+            tree_payload.get("split_root_branch", True),
+            field="tree.split_root_branch",
+        )
         tree_settings = TreeSettings(
             taxa_labels=taxa_labels,
             rooted=rooted,
@@ -542,6 +545,20 @@ def _expect_mapping(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ConfigurationError(f"Configuration value for '{key}' must be a mapping")
     return value
+
+
+def _coerce_bool(value: Any, *, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "1", "on"}:
+            return True
+        if normalized in {"false", "no", "0", "off"}:
+            return False
+
+    raise ConfigurationError(f"'{field}' must be a boolean")
 
 
 def _expect_iterable(payload: Mapping[str, Any], key: str) -> Sequence[Any]:
