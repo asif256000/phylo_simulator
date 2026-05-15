@@ -4,15 +4,16 @@ This document describes all configuration fields accepted by the Phylo Simulator
 
 ## Overview
 
-A configuration file specifies how phylogenetic trees and sequences are generated. The top-level structure contains five main sections:
+A configuration file specifies how phylogenetic trees and sequences are generated. The top-level structure contains eight main sections:
 
 1. **`seed`** - Random number generator seed
 2. **`parallel_cores`** - Parallelism control
-3. **`tree`** - Tree generation parameters
-4. **`sequence`** - Sequence simulation parameters
-5. **`simulation`** - Backend and simulation options
-6. **`dataset`** - Output locations and counts
-7. **`verify`** - Verification output options
+3. **`debug`** - Optional XML debug metadata output
+4. **`tree`** - Tree generation parameters
+5. **`sequence`** - Sequence simulation parameters
+6. **`simulation`** - Backend and simulation options
+7. **`dataset`** - Output locations and counts
+8. **`verify`** - Verification output options
 
 ---
 
@@ -48,6 +49,38 @@ seed: 123
 **Example**:
 ```yaml
 parallel_cores: 4
+```
+
+---
+
+### `debug`
+
+**Type**: Boolean  
+**Required**: No  
+**Default**: `false`  
+**Description**: Enables guarded XML debug metadata on each generated phylogeny. When `debug` is `true`, and `dataset.tree_count` is ≤ 500, the generator attaches a small set of diagnostic fields to the PhyloXML `other` section for each tree:
+
+- `topology`: the literal topology string used
+- `newick`: the Newick representation of the sampled tree
+- `branch_length_distribution`: the chosen distribution name (e.g. `uniform`)
+
+For IQ-TREE runs, the generator also reads the screen log file written by the simulator and records:
+
+- `model`: the exact model line reported by IQ-TREE, including parameter values
+- `seed`: the random seed reported by IQ-TREE
+- `state_frequencies`: JSON-serialized `pi(...)` values parsed from the log
+- `rate_matrix`: JSON-serialized Q-matrix parsed from the log
+- `sequence_command`: the exact command string used to generate sequences
+
+Note: the generator no longer embeds the raw distribution parameter objects (for branch lengths or model-parameter distributions) into the PhyloXML output. This keeps debug annotations compact and focused on the sampling outcome rather than full parameter payloads.
+
+**Constraints**:
+- Must be a boolean
+- Can only be enabled when `dataset.tree_count <= 500`
+
+**Example**:
+```yaml
+debug: true
 ```
 
 ---
@@ -90,6 +123,7 @@ tree:
 - `uniform` - Uniform distribution over a specified range
 - `exponential` - Exponential distribution with specified rate
 - `truncated_exponential` - Exponential distribution truncated to a bounded range
+- `normal` - Normal distribution with optional bounds
 
 **Weights**:
 - Each weight must be a positive float (> 0)
@@ -106,9 +140,10 @@ tree:
 ```yaml
 tree:
   branch_length_distributions:
-    uniform: 0.5
-    exponential: 0.3
+    uniform: 0.4
+    exponential: 0.25
     truncated_exponential: 0.2
+    normal: 0.15
 ```
 ---
 ### `tree.branch_length_params`
@@ -122,21 +157,36 @@ tree:
 **Supported Parameters**:
 
 #### **uniform**
-- `range: [min, max]` - The range for uniform sampling
+- `range: [min, max]` - Uniform sampling bounds
   - Must provide two numeric values
   - `min` ≥ 0, `max` > 0, `max` > `min`
-  - Example: `range: [0.05, 0.8]`
+
+The `uniform` distribution draws values uniformly from the closed interval $[a,b]$ (here `min=a`, `max=b`). The probability density is
+$$
+f(x)=\frac{1}{b-a},\quad a\le x\le b
+$$
+and the mean is $\dfrac{a+b}{2}$. Ensure `b>a` and both are non-negative for branch-length sampling.
 
 #### **exponential**
-- `rate: <positive number>` - The λ (lambda) parameter for exponential distribution
-  - Must be a positive float
-  - Example: `rate: 5.0`
+- `rate: <positive number>` - Exponential rate parameter. This is the usual $\lambda$ parameter of the exponential density.
+  $$
+  f(x;\lambda)=\lambda e^{-\lambda x},\quad x\ge 0
+  $$
+  The mean is $1/\lambda$ and the variance is $1/\lambda^2$.
+  - Example: `rate: 5.0` corresponds to a mean branch length of $0.2$.
 
 #### **truncated_exponential**
-- `rate: <positive number>` - The λ (lambda) parameter
-  - `max: <positive number>` - Upper bound (required)
-  - `min: <non-negative number>` - Lower bound (optional, defaults to 0.0)
-  - Example: `rate: 2.0`, `min: 0.01`, `max: 1.0`
+- `rate: <positive number>` - Exponential rate parameter ($\lambda$ as above) used for the underlying exponential before truncation.
+- `min: <non-negative number>` - Lower truncation bound (optional, defaults to $0.0$).
+- `max: <positive number>` - Upper truncation bound (required). Values are sampled from the exponential distribution conditioned to lie in $[\mathrm{min},\mathrm{max}]$.
+  - Note: the sampler uses the inverse CDF of the exponential conditioned on $[\mathrm{min},\mathrm{max}]$ to produce values inside the interval (no rejection/resampling is performed for this distribution).
+
+#### **normal**
+- `mean: <number>` - Mean of the distribution (denoted $\mu$). Draws are centered at $\mu$.
+- `variance: <non-negative number>` - Variance (denoted $\sigma^2$). The standard deviation is $\sigma=\sqrt{\mathrm{variance}}$.
+ - `min: <number>` - Optional lower bound. When provided, the sampler *redraws* until a sample falls within the bounds. The implementation retries up to an internal limit (`10000` attempts) and will raise a `RuntimeError` if sampling repeatedly fails (bounds are too restrictive).
+ - `max: <number>` - Optional upper bound. When provided, the sampler *redraws* until a sample falls within the bounds. The implementation retries up to an internal limit (`10000` attempts) and will raise a `RuntimeError` if sampling repeatedly fails (bounds are too restrictive).
+  - Example: `mean: 0.5, variance: 0.04` corresponds to $\mu=0.5$ and $\sigma=0.2$.
 
 **Example with mixed distributions**:
 ```yaml
@@ -145,6 +195,7 @@ tree:
     uniform: 0.5
     exponential: 0.3
     truncated_exponential: 0.2
+    normal: 0.0
   branch_length_params:
     uniform:
       range: [0.05, 0.8]
@@ -153,6 +204,11 @@ tree:
     truncated_exponential:
       rate: 2.0
       min: 0.01
+      max: 1.0
+    normal:
+      mean: 0.5
+      variance: 0.04
+      min: 0.0
       max: 1.0
 ```
 
@@ -290,6 +346,118 @@ sequence:
 ```yaml
 sequence:
   model: HKY
+```
+
+### `sequence.model_parameters` (IQ-TREE only)
+
+**Type**: Mapping (optional)
+
+**Description**: Optional parameters to append to the substitution model name for IQ-TREE. When provided, the generator formats the final model token as `MODEL{v1/v2/...}` and passes it as a single `-m` argument to IQ-TREE. The values are rounded to 6 decimal places before formatting.
+
+Exactly one of these mutually exclusive modes is supported:
+- `fixed_parameters`: a list of numeric values to use verbatim and format in order.
+- `parameter_distribution`: a distribution spec that draws `draw_count` numeric values according to the chosen distribution.
+
+Supported distribution names: `uniform`, `exponential`, `truncated_exponential`, `normal`.
+
+#### `sequence.model_parameters.fixed_parameters`
+
+**Type**: List of numbers
+**Description**: Static parameter values to append to the model. For example, `[0.1, 0.2, 0.3]` produces `MODEL{0.1/0.2/0.3}`.
+
+**Constraints**:
+- Must contain at least one numeric value
+- All values are converted to floats
+- Mutually exclusive with `parameter_distribution`
+
+**Example**:
+```yaml
+sequence:
+  model: MODEL
+  model_parameters:
+    fixed_parameters: [0.1, 0.2, 0.1, 1.1, 0.8, 0.6]
+```
+
+#### `sequence.model_parameters.parameter_distribution`
+
+**Type**: Mapping
+**Description**: Draw parameter values from a statistical distribution. A new set of parameters is drawn for each tree, allowing variation across simulations.
+
+The available distribution names are the same as the branch-length distributions described in [`tree.branch_length_params`](#treebranch_length_params). Use that section for the accepted parameters for each distribution.
+
+
+Distribution-specific values live under a nested `parameters` mapping. Note: the `parameters` mapping contains the *distribution hyperparameters* (for example, `mean`, `variance`, or `rate`) that control the sampler — it does not directly list the model's numeric parameter values. The generator will draw `draw_count` numeric values from the specified distribution using the hyperparameters and use those drawn values as the model's parameter list (formatted into `MODEL{v1/v2/...}`).
+
+Required sub-fields:
+- `distribution_name` (string): Name of the distribution to sample from
+- `draw_count` (integer): Number of model parameters to draw (for example, `11` for an `UNREST` model expecting 11 values)
+
+Distribution-specific parameters (placed under the `parameters` sub-key):
+- `uniform`
+- `exponential`
+- `truncated_exponential`
+- `normal`
+
+See [`tree.branch_length_params`](#treebranch_length_params) for the exact hyperparameter names accepted for each distribution.
+
+Schema example (explicit):
+```yaml
+sequence:
+  model: UNREST
+  model_parameters:
+    parameter_distribution:
+      distribution_name: normal   # distribution to draw model parameters from
+      draw_count: 11              # number of model parameters to draw
+      parameters:                 # distribution hyperparameters (mean, variance, ...)
+        mean: 1.0
+        variance: 0.2
+```
+
+Behavior: for the example above the generator draws 11 independent samples from $\mathcal{N}(\mu=1.0,\sigma^2=0.2)$. If `min`/`max` bounds are provided the sampler *redraws* until a value falls within the bounds (up to an internal retry limit); the resulting values are then formatted into the final IQ-TREE model token `UNREST{v1/v2/.../v11}`.
+
+**Constraints**:
+- Mutually exclusive with `fixed_parameters`
+- `draw_count` must be a positive integer
+
+**Example**:
+```yaml
+sequence:
+  model: UNREST
+  model_parameters:
+    parameter_distribution:
+      distribution_name: uniform
+      draw_count: 11
+      parameters:
+        range: [0.75, 1.25]
+```
+
+**Example with truncated exponential**:
+```yaml
+sequence:
+  model: GTR
+  model_parameters:
+    parameter_distribution:
+      distribution_name: truncated_exponential
+      draw_count: 5
+      parameters:
+        rate: 2.0
+        min: 0.01
+        max: 1.0
+```
+
+**Example with normal**:
+```yaml
+sequence:
+  model: UNREST
+  model_parameters:
+    parameter_distribution:
+      distribution_name: normal
+      draw_count: 11
+      parameters:
+        mean: 1.0
+        variance: 0.04
+        min: 0.8
+        max: 1.2
 ```
 
 ---

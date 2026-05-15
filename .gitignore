@@ -2,6 +2,7 @@
 **.npy
 **.png
 **.out
+**.ipynb
 xml_verify/
 xml_data/
 npy_data/
@@ -15,3 +16,7 @@ phylo_*.sh
 AGENT.*
 .venv
 config/
+
+# Everything except GitHub Actions
+.github/*
+!.github/workflows/

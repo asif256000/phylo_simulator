@@ -57,6 +57,24 @@ def seqgen_simulation(
     }
 
 
+def fixed_model_parameters(values: list[float]) -> dict[str, Any]:
+    return {"fixed_parameters": list(values)}
+
+
+def parameter_distribution(
+    *,
+    distribution_name: str,
+    draw_count: int,
+    **parameters: Any,
+) -> dict[str, Any]:
+    distribution_payload: dict[str, Any] = {
+        "distribution_name": distribution_name,
+        "draw_count": draw_count,
+    }
+    distribution_payload.update(parameters)
+    return {"parameter_distribution": distribution_payload}
+
+
 def build_payload(
     *,
     seed: int,
@@ -71,7 +89,9 @@ def build_payload(
     rooted: bool = True,
     split_root_branch: bool = True,
     parallel_cores: int = 1,
+    debug: bool | None = None,
     simulation: Mapping[str, Any] | None = None,
+    model_parameters: Mapping[str, Any] | None = None,
     verify_padding_for_fasta: bool | None = None,
     xml_directory: str | None = None,
     npy_directory: str | None = None,
@@ -83,7 +103,9 @@ def build_payload(
         "tree": {
             "taxa_labels": taxa_labels,
             "branch_length_distributions": dict(branch_length_distributions),
-            "branch_length_params": {name: dict(params) for name, params in branch_length_params.items()},
+            "branch_length_params": {
+                name: dict(params) for name, params in branch_length_params.items()
+            },
             "rooted": rooted,
             "topologies": topologies,
             "split_root_branch": split_root_branch,
@@ -92,6 +114,12 @@ def build_payload(
         "simulation": dict(simulation or iqtree_simulation()),
         "dataset": {"tree_count": tree_count, "output_name": output_name},
     }
+
+    if debug is not None:
+        payload["debug"] = debug
+
+    if model_parameters is not None:
+        payload["sequence"]["model_parameters"] = dict(model_parameters)
 
     if xml_directory is not None:
         payload["dataset"]["xml_directory"] = xml_directory
@@ -117,6 +145,7 @@ def uniform_payload(
     rooted: bool = True,
     split_root_branch: bool = True,
     parallel_cores: int = 1,
+    debug: bool | None = None,
     model: str = "JC",
     simulation: Mapping[str, Any] | None = None,
     verify_padding_for_fasta: bool | None = None,
@@ -137,6 +166,7 @@ def uniform_payload(
         rooted=rooted,
         split_root_branch=split_root_branch,
         parallel_cores=parallel_cores,
+        debug=debug,
         simulation=simulation,
         verify_padding_for_fasta=verify_padding_for_fasta,
         xml_directory=xml_directory,

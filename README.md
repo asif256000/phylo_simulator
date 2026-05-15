@@ -19,6 +19,7 @@ Create a configuration file in YAML or JSON (see templates in `sample_config/gen
 ```yaml
 seed: 42
 parallel_cores: 0  # Auto-detect available cores
+debug: false  # Optional XML debug metadata; requires dataset.tree_count <= 500. When enabled the XML includes compact diagnostics such as `newick`, `branch_length_distribution`, `sequence_command`, and IQ-TREE log fields like `model`, `seed`, `state_frequencies`, and `rate_matrix`.
 
 tree:
   taxa_labels: [A, B, C]
@@ -73,7 +74,10 @@ Generates phylogenetic trees and aligned sequences in PhyloXML format. Features:
 
 - Configurable tree topologies (rooted or unrooted)
 - Branch length distributions (mixture of uniform, exponential, and truncated exponential)
+- Branch length distributions (mixture of uniform, exponential, truncated exponential, and normal). Note: `truncated_exponential` values are produced via the inverse-CDF conditioned on the specified bounds (no rejection), while `normal` draws will be redrawn until they fall within provided `min`/`max` bounds (up to an internal retry limit).
 - Multiple sequence simulation backends (IQ-TREE, Seq-Gen)
+- Optional IQ-TREE substitution model parameters via `sequence.model_parameters`
+- Optional XML debug metadata for small datasets via `debug: true` (adds `newick`, `sequence_command`, and IQ-TREE log fields)
 - Indel simulation
 - Automatic parallelization across available CPU cores
 - Verification and export utilities

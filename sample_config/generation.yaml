@@ -1,28 +1,31 @@
 # Sample configurations demonstrating the inputs accepted by the tree and sequence generator.
 # Copy one of these blocks to config/generation.yaml (or another file) and adjust paths as needed.
-
 ---
 # Minimal IQ-TREE based configuration for two taxa with uniform distribution
 seed: 123
 parallel_cores: 2
+debug: true
 
 tree:
   taxa_labels:
-    - A
-    - B
+  - A
+  - B
   branch_length_distributions:
     uniform: 1.0
   branch_length_params:
     uniform:
-      range: [0.1, 1.0]
+      range: [ 0.1, 1.0 ]
   rooted: true
   split_root_branch: true
   topologies:
-    - "(A,:B)"
+  - "(A,:B)"
 
 sequence:
   length: 1000
   model: JC
+  # Optional IQ-TREE model parameters example (UNREST with fixed params)
+  # model_parameters:
+  #   fixed_parameters: [0.1, 0.2, 0.3]
 
 simulation:
   backend: iqtree
@@ -31,7 +34,7 @@ simulation:
   seqgen_kwargs: {}
   indel:
     enabled: false
-    rates: [0.1, 0.1]
+    rates: [ 0.1, 0.1 ]
     # Optional AliSim size distributions for insertions/deletions
     # sizes: ["POW{1.5/50}", "GEO{5}"]
 
@@ -45,9 +48,9 @@ dataset:
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
 
-# Optional verification settings
-# verify:
-#   padding_for_fasta: false
+  # Optional verification settings
+  # verify:
+  #   padding_for_fasta: false
 
 ---
 # Seq-Gen example with exponential distribution
@@ -56,8 +59,8 @@ parallel_cores: 2
 
 tree:
   taxa_labels:
-    - taxon_1
-    - taxon_2
+  - taxon_1
+  - taxon_2
   branch_length_distributions:
     exponential: 1.0
   branch_length_params:
@@ -66,7 +69,7 @@ tree:
   rooted: true
   split_root_branch: true
   topologies:
-    - "(taxon_1,:taxon_2)"
+  - "(taxon_1,:taxon_2)"
 
 sequence:
   length: 500
@@ -74,13 +77,13 @@ sequence:
 
 simulation:
   backend: seqgen
-  iqtree_path: null  # not required when using Seq-Gen
+  iqtree_path: null # not required when using Seq-Gen
   seqgen_path: "/absolute/path/to/seq-gen"
   seqgen_kwargs:
     ts_tv_ratio: 2.0
-    frequencies: [0.25, 0.25, 0.25, 0.25]
+    frequencies: [ 0.25, 0.25, 0.25, 0.25 ]
     additional_args:
-      - "-k1"
+    - "-k1"
   indel:
     enabled: false
     rates: null
@@ -94,9 +97,9 @@ dataset:
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
 
-# Optional verification settings
-# verify:
-#   padding_for_fasta: false
+  # Optional verification settings
+  # verify:
+  #   padding_for_fasta: false
 
 ---
 # Three-taxa configuration with mixture of uniform and exponential distributions (enables indels)
@@ -105,22 +108,22 @@ parallel_cores: 2
 
 tree:
   taxa_labels:
-    - A
-    - B
-    - C
+  - A
+  - B
+  - C
   branch_length_distributions:
     uniform: 0.7
     exponential: 0.3
   branch_length_params:
     uniform:
-      range: [0.1, 0.9]
+      range: [ 0.1, 0.9 ]
     exponential:
       rate: 1.5
   rooted: true
   split_root_branch: true
   topologies:
-    - "((A,B),:C)"
-    - "((A,C),:B)"
+  - "((A,B),:C)"
+  - "((A,C),:B)"
 
 sequence:
   length: 750
@@ -133,8 +136,8 @@ simulation:
   seqgen_kwargs: {}
   indel:
     enabled: true
-    rates: [0.05, 0.05]
-    sizes: ["POW{1.5/50}", "GEO{5}"]
+    rates: [ 0.05, 0.05 ]
+    sizes: [ "POW{1.5/50}", "GEO{5}" ]
 
 dataset:
   tree_count: 25
@@ -145,9 +148,9 @@ dataset:
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
 
-# Optional verification settings
-# verify:
-#   padding_for_fasta: false
+  # Optional verification settings
+  # verify:
+  #   padding_for_fasta: false
 
 ---
 # Four-taxa configuration with truncated exponential distribution
@@ -156,10 +159,10 @@ parallel_cores: 4
 
 tree:
   taxa_labels:
-    - t1
-    - t2
-    - t3
-    - t4
+  - t1
+  - t2
+  - t3
+  - t4
   branch_length_distributions:
     truncated_exponential: 1.0
   branch_length_params:
@@ -170,12 +173,19 @@ tree:
   rooted: true
   split_root_branch: false
   topologies:
-    - "((t1,t2),:(t3,t4))"
-    - "((t1,t3),:(t2,t4))"
+  - "((t1,t2),:(t3,t4))"
+  - "((t1,t3),:(t2,t4))"
 
 sequence:
   length: 600
   model: JC
+  # Optional IQ-TREE parameter draws use nested `parameters`
+  # model_parameters:
+  #   parameter_distribution:
+  #     distribution_name: uniform
+  #     draw_count: 6
+  #     parameters:
+  #       range: [0.05, 0.95]
 
 simulation:
   backend: iqtree
@@ -184,7 +194,7 @@ simulation:
   seqgen_kwargs: {}
   indel:
     enabled: false
-    rates: [0.05, 0.05]
+    rates: [ 0.05, 0.05 ]
     # Optional AliSim size distributions for insertions/deletions
     # sizes: ["POW{1.5/50}", "GEO{5}"]
 
@@ -194,9 +204,9 @@ dataset:
   # Optional: number of trees to generate per XML write chunk (default 10000)
   # tree_chunk_size: 10000
 
-# Optional verification settings
-# verify:
-#   padding_for_fasta: false
+  # Optional verification settings
+  # verify:
+  #   padding_for_fasta: false
 
 ---
 # Unrooted quartet (Seq-Gen) with mixed distribution: uniform and truncated exponential
@@ -205,16 +215,16 @@ parallel_cores: 2
 
 tree:
   taxa_labels:
-    - p1
-    - p2
-    - p3
-    - p4
+  - p1
+  - p2
+  - p3
+  - p4
   branch_length_distributions:
     uniform: 0.6
     truncated_exponential: 0.4
   branch_length_params:
     uniform:
-      range: [0.15, 0.6]
+      range: [ 0.15, 0.6 ]
     truncated_exponential:
       rate: 2.0
       min: 0.1
@@ -222,13 +232,21 @@ tree:
   rooted: false
   split_root_branch: true
   topologies:
-    - "((p1,p2),(p3,p4))"
-    - "((p1,p3),(p2,p4))"
-    - "((p1,p4),(p2,p3))"
+  - "((p1,p2),(p3,p4))"
+  - "((p1,p3),(p2,p4))"
+  - "((p1,p4),(p2,p3))"
 
 sequence:
   length: 800
   model: HKY
+  # Example parameter draw values are rounded to 6 decimal places before formatting
+  # model_parameters:
+  #   parameter_distribution:
+  #     distribution_name: normal
+  #     draw_count: 11
+  #     parameters:
+  #       mean: 0.5
+  #       variance: 0.04
 
 simulation:
   backend: seqgen
@@ -236,7 +254,7 @@ simulation:
   seqgen_path: "/absolute/path/to/seq-gen"
   seqgen_kwargs:
     ts_tv_ratio: 1.5
-    frequencies: [0.2, 0.3, 0.3, 0.2]
+    frequencies: [ 0.2, 0.3, 0.3, 0.2 ]
   indel:
     enabled: false
     rates: null
@@ -247,28 +265,28 @@ dataset:
   # Optional: number of trees to generate per XML write chunk (default 10000)
   # tree_chunk_size: 10000
 
-# Optional verification settings
-# verify:
-#   padding_for_fasta: false
+  # Optional verification settings
+  # verify:
+  #   padding_for_fasta: false
 
 ---
 # Auto-detect available CPU cores for parallelization (set parallel_cores to 0)
 # This configuration demonstrates all three distribution types in a single mixture
 seed: 555
-parallel_cores: 0  # Auto-detect all available CPU cores
+parallel_cores: 0 # Auto-detect all available CPU cores
 
 tree:
   taxa_labels:
-    - Species_A
-    - Species_B
-    - Species_C
+  - Species_A
+  - Species_B
+  - Species_C
   branch_length_distributions:
     uniform: 0.4
     exponential: 0.35
     truncated_exponential: 0.25
   branch_length_params:
     uniform:
-      range: [0.08, 0.7]
+      range: [ 0.08, 0.7 ]
     exponential:
       rate: 1.2
     truncated_exponential:
@@ -278,12 +296,21 @@ tree:
   rooted: true
   split_root_branch: true
   topologies:
-    - "((Species_A,Species_B),:Species_C)"
-    - "((Species_A,Species_C),:Species_B)"
+  - "((Species_A,Species_B),:Species_C)"
+  - "((Species_A,Species_C),:Species_B)"
 
 sequence:
   length: 1500
   model: GTR
+  # Example with truncated exponential parameters in nested `parameters`
+  # model_parameters:
+  #   parameter_distribution:
+  #     distribution_name: truncated_exponential
+  #     draw_count: 5
+  #     parameters:
+  #       rate: 3.0
+  #       min: 0.05
+  #       max: 0.8
 
 simulation:
   backend: iqtree
@@ -300,3 +327,130 @@ dataset:
   # Optional: Specify custom directories for XML and NPY output
   # xml_directory: "/path/to/custom/xml/directory"
   # npy_directory: "/path/to/custom/npy/directory"
+
+---
+# Example with fixed model parameters (IQ-TREE only)
+# The model string will be formatted as: UNREST{0.1/0.2/0.1/1.1/0.8/0.6}
+seed: 54321
+parallel_cores: 2
+
+tree:
+  taxa_labels:
+  - Species_X
+  - Species_Y
+  - Species_Z
+  branch_length_distributions:
+    uniform: 1.0
+  branch_length_params:
+    uniform:
+      range: [ 0.05, 0.5 ]
+  rooted: true
+  split_root_branch: true
+  topologies:
+  - "((Species_X,Species_Y),:Species_Z)"
+
+sequence:
+  length: 800
+  model: UNREST
+  model_parameters:
+    fixed_parameters: [ 0.1, 0.2, 0.1, 1.1, 0.8, 0.6 ]
+
+simulation:
+  backend: iqtree
+  iqtree_path: "/absolute/path/to/iqtree3"
+  seqgen_path: "/absolute/path/to/seq-gen"
+  seqgen_kwargs: {}
+  indel:
+    enabled: false
+    rates: null
+
+dataset:
+  tree_count: 50
+  output_name: "fixed_model_params_dataset"
+---
+# Example with distribution-based model parameters (IQ-TREE only)
+# Parameters are drawn from a uniform distribution for each tree
+seed: 99999
+parallel_cores: 2
+
+tree:
+  taxa_labels:
+  - A
+  - B
+  - C
+  - D
+  branch_length_distributions:
+    exponential: 1.0
+  branch_length_params:
+    exponential:
+      rate: 1.5
+  rooted: true
+  split_root_branch: true
+  topologies:
+  - "(((A,B),C),:D)"
+
+sequence:
+  length: 1000
+  model: GTR
+  model_parameters:
+    parameter_distribution:
+      distribution_name: uniform
+      draw_count: 5
+      parameters:
+        range: [ 0.01, 0.99 ]
+simulation:
+  backend: iqtree
+  iqtree_path: "/absolute/path/to/iqtree3"
+  seqgen_path: "/absolute/path/to/seq-gen"
+  seqgen_kwargs: {}
+  indel:
+    enabled: false
+    rates: null
+
+dataset:
+  tree_count: 75
+  output_name: "distribution_model_params_dataset"
+---
+# Example with truncated exponential model parameters (IQ-TREE only)
+seed: 11111
+parallel_cores: 2
+
+tree:
+  taxa_labels:
+  - taxon_1
+  - taxon_2
+  - taxon_3
+  branch_length_distributions:
+    uniform: 1.0
+  branch_length_params:
+    uniform:
+      range: [ 0.1, 0.8 ]
+  rooted: true
+  split_root_branch: true
+  topologies:
+  - "((taxon_1,taxon_2),:taxon_3)"
+
+sequence:
+  length: 600
+  model: HKY
+  # Example with truncated exponential parameters in nested `parameters`
+  # model_parameters:
+  #   parameter_distribution:
+  #     distribution_name: truncated_exponential
+  #     draw_count: 3
+  #     parameters:
+  #       rate: 2.0
+  #       min: 0.05
+  #       max: 0.8
+simulation:
+  backend: iqtree
+  iqtree_path: "/absolute/path/to/iqtree3"
+  seqgen_path: "/absolute/path/to/seq-gen"
+  seqgen_kwargs: {}
+  indel:
+    enabled: false
+    rates: null
+
+dataset:
+  tree_count: 30
+  output_name: "truncated_exp_model_params_dataset"
