@@ -11,6 +11,9 @@ from typing import Any, Literal, Optional, Union
 import yaml
 
 SimulatorType = Literal["iqtree", "seqgen"]
+ModelParameterDistributionName = Literal[
+    "uniform", "exponential", "truncated_exponential", "normal"
+]
 
 
 class ConfigurationError(RuntimeError):
@@ -39,7 +42,9 @@ class TreeSettings:
     taxa_labels: tuple[str, ...]
     rooted: bool = True
     topologies: tuple[TopologySpec, ...] = field(default_factory=tuple)
-    branch_length_distributions: tuple[tuple[str, float], ...] = field(default_factory=tuple)
+    branch_length_distributions: tuple[tuple[str, float], ...] = field(
+        default_factory=tuple
+    )
     branch_length_params: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     split_root_branch: bool = True
 
@@ -83,19 +88,19 @@ class TreeSettings:
 
     @property
     def min_branch_length(self) -> float:
-        """Return the minimum branch length used for root pivoting. 
-        
+        """Return the minimum branch length used for root pivoting.
+
         Priority: uniform.range[0] > truncated_exponential.min > 0.0
         """
         rng = self.uniform_range
         if rng is not None:
             return rng[0]
-        
+
         te_params = self.truncated_exponential_params
         if te_params is not None:
             _, lower, _ = te_params
             return lower
-        
+
         return 0.0
 
 
@@ -105,6 +110,24 @@ class SequenceSettings:
 
     length: int
     model: str = "JC"
+    model_parameters: Optional["SequenceModelParameters"] = None
+
+
+@dataclass
+class SequenceModelParameters:
+    """Settings describing optional model parameter values."""
+
+    fixed_parameters: Optional[tuple[float, ...]] = None
+    parameter_distribution: Optional["ModelParameterDistributionSettings"] = None
+
+
+@dataclass
+class ModelParameterDistributionSettings:
+    """Settings describing how model parameters are drawn."""
+
+    distribution_name: ModelParameterDistributionName
+    draw_count: int
+    parameters: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -147,7 +170,7 @@ class DatasetSettings:
 
     def ensure_xml_directory(self) -> None:
         self._xml_directory().mkdir(parents=True, exist_ok=True)
-    
+
     def output_npy_path(self) -> Path:
         npy_dir = self._npy_directory()
         npy_dir.mkdir(parents=True, exist_ok=True)
@@ -181,21 +204,30 @@ class GenerationConfig:
     verify: VerifySettings
     dataset: DatasetSettings
     parallel_cores: int = 1
+    debug: bool = False
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any], base_path: Optional[Path] = None) -> "GenerationConfig":
+    def from_mapping(
+        cls, payload: Mapping[str, Any], base_path: Optional[Path] = None
+    ) -> "GenerationConfig":
         try:
             seed = int(payload["seed"])
         except KeyError as exc:  # pragma: no cover - defensive guard
-            raise ConfigurationError("Configuration missing required key: 'seed'") from exc
+            raise ConfigurationError(
+                "Configuration missing required key: 'seed'"
+            ) from exc
 
         tree_payload = _expect_mapping(payload, "tree")
         taxa_labels = tuple(_expect_iterable(tree_payload, "taxa_labels"))
         if not taxa_labels:
-            raise ConfigurationError("'tree.taxa_labels' must contain at least one label")
+            raise ConfigurationError(
+                "'tree.taxa_labels' must contain at least one label"
+            )
 
         rooted = _coerce_bool(tree_payload.get("rooted", True), field="tree.rooted")
-        parsed_topologies = _parse_topologies(tree_payload.get("topologies"), taxa_labels, rooted=rooted)
+        parsed_topologies = _parse_topologies(
+            tree_payload.get("topologies"), taxa_labels, rooted=rooted
+        )
         distributions_raw = tree_payload.get("branch_length_distributions")
         params_payload = tree_payload.get("branch_length_params")
 
@@ -203,7 +235,9 @@ class GenerationConfig:
         parsed_params: dict[str, dict[str, Any]] = {}
 
         if distributions_raw is None or not isinstance(distributions_raw, Mapping):
-            raise ConfigurationError("'tree.branch_length_distributions' must be a mapping of name to weight")
+            raise ConfigurationError(
+                "'tree.branch_length_distributions' must be a mapping of name to weight"
+            )
 
         total_weight = 0.0
         for name_raw, weight_raw in distributions_raw.items():
@@ -214,24 +248,32 @@ class GenerationConfig:
             try:
                 weight = float(weight_raw)
             except Exception as exc:
-                raise ConfigurationError("Distribution weights must be numbers") from exc
+                raise ConfigurationError(
+                    "Distribution weights must be numbers"
+                ) from exc
             if weight <= 0:
                 raise ConfigurationError("Distribution weights must be positive")
             distributions_list.append((name, weight))
             total_weight += weight
 
         if not distributions_list:
-            raise ConfigurationError("'tree.branch_length_distributions' must contain at least one entry")
+            raise ConfigurationError(
+                "'tree.branch_length_distributions' must contain at least one entry"
+            )
         if abs(total_weight - 1.0) > 1e-6:
             raise ConfigurationError("Branch length distribution weights must sum to 1")
 
         if params_payload is None or not isinstance(params_payload, Mapping):
-            raise ConfigurationError("'tree.branch_length_params' must be provided as a mapping")
+            raise ConfigurationError(
+                "'tree.branch_length_params' must be provided as a mapping"
+            )
 
         for dist_name, _ in distributions_list:
             dist_params_raw = params_payload.get(dist_name)
             if not isinstance(dist_params_raw, Mapping):
-                raise ConfigurationError(f"Missing or invalid params for distribution '{dist_name}'")
+                raise ConfigurationError(
+                    f"Missing or invalid params for distribution '{dist_name}'"
+                )
             parsed_params[dist_name] = dict(dist_params_raw)
 
         # Validate known distributions
@@ -239,22 +281,32 @@ class GenerationConfig:
             if dist_name == "uniform":
                 raw_range = parsed_params[dist_name].get("range")
                 if not isinstance(raw_range, Iterable):
-                    raise ConfigurationError("'uniform' distribution requires a 'range' iterable of two numbers")
+                    raise ConfigurationError(
+                        "'uniform' distribution requires a 'range' iterable of two numbers"
+                    )
                 values = tuple(float(v) for v in raw_range)
                 if len(values) != 2:
-                    raise ConfigurationError("'uniform' distribution range must have exactly two values")
+                    raise ConfigurationError(
+                        "'uniform' distribution range must have exactly two values"
+                    )
                 min_branch, max_branch = values
                 if min_branch < 0 or max_branch <= 0 or max_branch <= min_branch:
-                    raise ConfigurationError("Invalid 'uniform' distribution range values")
+                    raise ConfigurationError(
+                        "Invalid 'uniform' distribution range values"
+                    )
                 parsed_params[dist_name]["range"] = (min_branch, max_branch)
             elif dist_name == "exponential":
                 rate_raw = parsed_params[dist_name].get("rate")
                 try:
                     rate = float(rate_raw)
                 except Exception as exc:
-                    raise ConfigurationError("'exponential' distribution requires numeric 'rate'") from exc
+                    raise ConfigurationError(
+                        "'exponential' distribution requires numeric 'rate'"
+                    ) from exc
                 if rate <= 0:
-                    raise ConfigurationError("'exponential' distribution 'rate' must be positive")
+                    raise ConfigurationError(
+                        "'exponential' distribution 'rate' must be positive"
+                    )
                 parsed_params[dist_name]["rate"] = rate
             elif dist_name == "truncated_exponential":
                 rate_raw = parsed_params[dist_name].get("rate")
@@ -265,16 +317,56 @@ class GenerationConfig:
                     max_value = float(max_raw)
                     min_value = float(min_raw) if min_raw is not None else 0.0
                 except Exception as exc:
-                    raise ConfigurationError("'truncated_exponential' requires numeric 'rate', 'max', and optional 'min' (defaults to 0)") from exc
+                    raise ConfigurationError(
+                        "'truncated_exponential' requires numeric 'rate', 'max', and optional 'min' (defaults to 0)"
+                    ) from exc
                 if rate <= 0 or max_value <= 0:
-                    raise ConfigurationError("'truncated_exponential' requires positive 'rate' and 'max'")
+                    raise ConfigurationError(
+                        "'truncated_exponential' requires positive 'rate' and 'max'"
+                    )
                 if min_value < 0 or min_value >= max_value:
-                    raise ConfigurationError("'truncated_exponential' 'min' must be >= 0 and < 'max'")
+                    raise ConfigurationError(
+                        "'truncated_exponential' 'min' must be >= 0 and < 'max'"
+                    )
                 parsed_params[dist_name]["rate"] = rate
                 parsed_params[dist_name]["min"] = min_value
                 parsed_params[dist_name]["max"] = max_value
+            elif dist_name == "normal":
+                mean_raw = parsed_params[dist_name].get("mean")
+                variance_raw = parsed_params[dist_name].get("variance")
+                min_raw = parsed_params[dist_name].get("min")
+                max_raw = parsed_params[dist_name].get("max")
+                try:
+                    mean = float(mean_raw)
+                    variance = float(variance_raw)
+                    min_value = float(min_raw) if min_raw is not None else None
+                    max_value = float(max_raw) if max_raw is not None else None
+                except Exception as exc:
+                    raise ConfigurationError(
+                        "'normal' distribution requires numeric 'mean' and 'variance'"
+                    ) from exc
+                if variance < 0:
+                    raise ConfigurationError(
+                        "'normal' distribution 'variance' must be non-negative"
+                    )
+                if (
+                    min_value is not None
+                    and max_value is not None
+                    and min_value >= max_value
+                ):
+                    raise ConfigurationError(
+                        "'normal' distribution 'min' must be < 'max'"
+                    )
+                parsed_params[dist_name]["mean"] = mean
+                parsed_params[dist_name]["variance"] = variance
+                if min_value is not None:
+                    parsed_params[dist_name]["min"] = min_value
+                if max_value is not None:
+                    parsed_params[dist_name]["max"] = max_value
             else:
-                raise ConfigurationError(f"Unsupported branch length distribution '{dist_name}'")
+                raise ConfigurationError(
+                    f"Unsupported branch length distribution '{dist_name}'"
+                )
         split_root_branch = _coerce_bool(
             tree_payload.get("split_root_branch", True),
             field="tree.split_root_branch",
@@ -293,19 +385,30 @@ class GenerationConfig:
         if seq_length <= 0:
             raise ConfigurationError("'sequence.length' must be positive")
         sequence_model = str(sequence_payload.get("model", "JC"))
-        sequence_settings = SequenceSettings(length=seq_length, model=sequence_model)
+        sequence_model_parameters = _parse_sequence_model_parameters(
+            sequence_payload.get("model_parameters")
+        )
+        sequence_settings = SequenceSettings(
+            length=seq_length,
+            model=sequence_model,
+            model_parameters=sequence_model_parameters,
+        )
 
         simulation_payload = _expect_mapping(payload, "simulation")
         backend_raw = simulation_payload.get("backend", "iqtree")
         if backend_raw not in ("iqtree", "seqgen"):
-            raise ConfigurationError("'simulation.backend' must be either 'iqtree' or 'seqgen'")
+            raise ConfigurationError(
+                "'simulation.backend' must be either 'iqtree' or 'seqgen'"
+            )
         iqtree_path = simulation_payload.get("iqtree_path")
         seqgen_path = simulation_payload.get("seqgen_path")
         seqgen_kwargs = dict(simulation_payload.get("seqgen_kwargs", {}))
 
         indel_payload = simulation_payload.get("indel", {}) or {}
         if not isinstance(indel_payload, Mapping):
-            raise ConfigurationError("'simulation.indel' must be a mapping when provided")
+            raise ConfigurationError(
+                "'simulation.indel' must be a mapping when provided"
+            )
         enabled_raw = indel_payload.get("enabled", False)
         if not isinstance(enabled_raw, bool):
             raise ConfigurationError("'simulation.indel.enabled' must be a boolean")
@@ -316,10 +419,14 @@ class GenerationConfig:
             rates_tuple = None
         else:
             if not isinstance(rates_payload, Iterable):
-                raise ConfigurationError("'simulation.indel.rates' must be an iterable of two floats")
+                raise ConfigurationError(
+                    "'simulation.indel.rates' must be an iterable of two floats"
+                )
             candidate_rates = tuple(float(value) for value in rates_payload)
             if len(candidate_rates) != 2:
-                raise ConfigurationError("'simulation.indel.rates' must contain exactly two values")
+                raise ConfigurationError(
+                    "'simulation.indel.rates' must contain exactly two values"
+                )
             rates_tuple = candidate_rates
 
         sizes_payload = indel_payload.get("sizes")
@@ -327,16 +434,26 @@ class GenerationConfig:
         if sizes_payload is None:
             sizes_tuple = None
         else:
-            if not isinstance(sizes_payload, Iterable) or isinstance(sizes_payload, (str, bytes)):
-                raise ConfigurationError("'simulation.indel.sizes' must be an iterable of two strings")
+            if not isinstance(sizes_payload, Iterable) or isinstance(
+                sizes_payload, (str, bytes)
+            ):
+                raise ConfigurationError(
+                    "'simulation.indel.sizes' must be an iterable of two strings"
+                )
             candidate_sizes = tuple(str(value).strip() for value in sizes_payload)
             if len(candidate_sizes) != 2:
-                raise ConfigurationError("'simulation.indel.sizes' must contain exactly two values")
+                raise ConfigurationError(
+                    "'simulation.indel.sizes' must contain exactly two values"
+                )
             if any(not value for value in candidate_sizes):
-                raise ConfigurationError("'simulation.indel.sizes' values must be non-empty strings")
+                raise ConfigurationError(
+                    "'simulation.indel.sizes' values must be non-empty strings"
+                )
             sizes_tuple = candidate_sizes  # type: ignore[assignment]
 
-        indel_settings = IndelSettings(enabled=indel_enabled, rates=rates_tuple, sizes=sizes_tuple)
+        indel_settings = IndelSettings(
+            enabled=indel_enabled, rates=rates_tuple, sizes=sizes_tuple
+        )
 
         simulation_settings = SimulationSettings(
             backend=backend_raw,
@@ -375,19 +492,23 @@ class GenerationConfig:
         if not output_basename:
             raise ConfigurationError("'dataset.output_name' must be a non-empty string")
         root_directory = _resolve_data_root(base_path)
-        
+
         xml_directory = dataset_payload.get("xml_directory")
         if xml_directory is not None:
             xml_directory = str(xml_directory).strip()
             if not xml_directory:
-                raise ConfigurationError("'dataset.xml_directory' must be a non-empty string")
-        
+                raise ConfigurationError(
+                    "'dataset.xml_directory' must be a non-empty string"
+                )
+
         npy_directory = dataset_payload.get("npy_directory")
         if npy_directory is not None:
             npy_directory = str(npy_directory).strip()
             if not npy_directory:
-                raise ConfigurationError("'dataset.npy_directory' must be a non-empty string")
-        
+                raise ConfigurationError(
+                    "'dataset.npy_directory' must be a non-empty string"
+                )
+
         dataset_settings = DatasetSettings(
             tree_count=tree_count,
             tree_chunk_size=tree_chunk_size,
@@ -397,13 +518,24 @@ class GenerationConfig:
             npy_directory=npy_directory,
         )
 
+        debug_raw = payload.get("debug", False)
+        if not isinstance(debug_raw, bool):
+            raise ConfigurationError("'debug' must be a boolean")
+        debug = debug_raw
+        if debug and tree_count > 500:
+            raise ConfigurationError(
+                "'debug' can only be enabled when 'dataset.tree_count' is <= 500"
+            )
+
         parallel_raw = payload.get("parallel_cores", 0)
         try:
             parallel_cores = int(parallel_raw)
         except (TypeError, ValueError) as exc:
             raise ConfigurationError("'parallel_cores' must be an integer") from exc
         if parallel_cores < 0:
-            raise ConfigurationError("'parallel_cores' must be a non-negative integer (0 for auto-detect)")
+            raise ConfigurationError(
+                "'parallel_cores' must be a non-negative integer (0 for auto-detect)"
+            )
 
         return GenerationConfig(
             seed=seed,
@@ -413,6 +545,7 @@ class GenerationConfig:
             verify=verify_settings,
             dataset=dataset_settings,
             parallel_cores=parallel_cores,
+            debug=debug,
         )
 
     def with_seed(self, seed: int) -> "GenerationConfig":
@@ -426,6 +559,7 @@ class GenerationConfig:
             verify=self.verify,
             dataset=self.dataset,
             parallel_cores=self.parallel_cores,
+            debug=self.debug,
         )
 
 
@@ -439,7 +573,9 @@ def load_generation_config(path: Union[str, Path]) -> GenerationConfig:
     try:
         text = config_path.read_text()
     except OSError as exc:  # pragma: no cover - filesystem guard
-        raise ConfigurationError(f"Failed to read configuration file: {config_path}") from exc
+        raise ConfigurationError(
+            f"Failed to read configuration file: {config_path}"
+        ) from exc
 
     suffix = config_path.suffix.lower()
     if suffix in {".yaml", ".yml"}:
@@ -485,7 +621,9 @@ def _parse_topologies(
         parsed.append(topology)
 
     if not parsed:
-        raise ConfigurationError("'tree.topologies' must contain at least one unique definition")
+        raise ConfigurationError(
+            "'tree.topologies' must contain at least one unique definition"
+        )
 
     return tuple(parsed)
 
@@ -505,9 +643,13 @@ def _parse_topology_entry(
     taxa_set = set(taxa_labels)
 
     if rooted:
-        left_expr, right_expr, left_marked, right_marked = _extract_root_children(normalized)
+        left_expr, right_expr, left_marked, right_marked = _extract_root_children(
+            normalized
+        )
         if left_marked == right_marked:
-            raise ConfigurationError("Rooted trees must mark exactly one child with ':'")
+            raise ConfigurationError(
+                "Rooted trees must mark exactly one child with ':'"
+            )
         if left_marked:
             left_expr, right_expr = right_expr, left_expr
 
@@ -519,7 +661,9 @@ def _parse_topology_entry(
         left_groups = _subtree_to_groups(left_node)
         right_groups = _subtree_to_groups(right_node)
         if not left_groups or not right_groups:
-            raise ConfigurationError("Topology definitions must include taxa on both sides of ':'")
+            raise ConfigurationError(
+                "Topology definitions must include taxa on both sides of ':'"
+            )
 
         tokens: tuple[tuple[str, ...], ...] = tuple(left_groups + right_groups)
         root_index = len(left_groups) - 1
@@ -541,7 +685,9 @@ def _expect_mapping(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     try:
         value = payload[key]
     except KeyError as exc:
-        raise ConfigurationError(f"Configuration missing required key: '{key}'") from exc
+        raise ConfigurationError(
+            f"Configuration missing required key: '{key}'"
+        ) from exc
     if not isinstance(value, Mapping):
         raise ConfigurationError(f"Configuration value for '{key}' must be a mapping")
     return value
@@ -566,10 +712,213 @@ def _expect_iterable(payload: Mapping[str, Any], key: str) -> Sequence[Any]:
     if value is None:
         raise ConfigurationError(f"Configuration missing required key: '{key}'")
     if isinstance(value, (str, bytes)):
-        raise ConfigurationError(f"Configuration value for '{key}' must not be a string")
+        raise ConfigurationError(
+            f"Configuration value for '{key}' must not be a string"
+        )
     if not isinstance(value, Iterable):
         raise ConfigurationError(f"Configuration value for '{key}' must be iterable")
     return list(value)
+
+
+def _parse_sequence_model_parameters(raw: Any) -> Optional[SequenceModelParameters]:
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ConfigurationError(
+            "'sequence.model_parameters' must be a mapping when provided"
+        )
+
+    allowed_keys = {"fixed_parameters", "parameter_distribution"}
+    extra_keys = set(raw.keys()) - allowed_keys
+    if extra_keys:
+        extra_list = ", ".join(sorted(str(key) for key in extra_keys))
+        raise ConfigurationError(
+            f"Unsupported keys in 'sequence.model_parameters': {extra_list}"
+        )
+
+    fixed_parameters_raw = raw.get("fixed_parameters")
+    parameter_distribution_raw = raw.get("parameter_distribution")
+
+    has_fixed_parameters = fixed_parameters_raw is not None
+    has_parameter_distribution = parameter_distribution_raw is not None
+    if has_fixed_parameters == has_parameter_distribution:
+        raise ConfigurationError(
+            "'sequence.model_parameters' must define exactly one of 'fixed_parameters' or 'parameter_distribution'"
+        )
+
+    if has_fixed_parameters:
+        fixed_parameters = _parse_fixed_model_parameters(fixed_parameters_raw)
+        return SequenceModelParameters(fixed_parameters=fixed_parameters)
+
+    parameter_distribution = _parse_model_parameter_distribution(
+        parameter_distribution_raw
+    )
+    return SequenceModelParameters(parameter_distribution=parameter_distribution)
+
+
+def _parse_fixed_model_parameters(raw: Any) -> tuple[float, ...]:
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, Iterable):
+        raise ConfigurationError(
+            "'sequence.model_parameters.fixed_parameters' must be an iterable of numbers"
+        )
+    try:
+        values = tuple(float(value) for value in raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            "'sequence.model_parameters.fixed_parameters' must contain only numbers"
+        ) from exc
+    if not values:
+        raise ConfigurationError(
+            "'sequence.model_parameters.fixed_parameters' must contain at least one value"
+        )
+    return values
+
+
+def _parse_model_parameter_distribution(raw: Any) -> ModelParameterDistributionSettings:
+    if not isinstance(raw, Mapping):
+        raise ConfigurationError(
+            "'sequence.model_parameters.parameter_distribution' must be a mapping"
+        )
+
+    distribution_name_raw = raw.get("distribution_name")
+    if distribution_name_raw is None:
+        raise ConfigurationError(
+            "'sequence.model_parameters.parameter_distribution.distribution_name' is required"
+        )
+    distribution_name = str(distribution_name_raw).strip().lower()
+    if distribution_name not in {
+        "uniform",
+        "exponential",
+        "truncated_exponential",
+        "normal",
+    }:
+        raise ConfigurationError(
+            f"Unsupported parameter distribution '{distribution_name}'"
+        )
+
+    draw_count_raw = raw.get("draw_count")
+    try:
+        draw_count = int(draw_count_raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            "'sequence.model_parameters.parameter_distribution.draw_count' must be an integer"
+        ) from exc
+    if draw_count <= 0:
+        raise ConfigurationError(
+            "'sequence.model_parameters.parameter_distribution.draw_count' must be positive"
+        )
+
+    params_raw = raw.get("parameters")
+    if not isinstance(params_raw, Mapping):
+        raise ConfigurationError(
+            "'sequence.model_parameters.parameter_distribution.parameters' must be a mapping"
+        )
+    params_source: Mapping[str, Any] = params_raw
+
+    if distribution_name == "uniform":
+        allowed_keys = {"distribution_name", "draw_count", "parameters"}
+        range_raw = params_source.get("range")
+        if not isinstance(range_raw, Iterable) or isinstance(range_raw, (str, bytes)):
+            raise ConfigurationError(
+                "'uniform' parameter distribution requires a 'range' iterable of two numbers"
+            )
+        try:
+            values = tuple(float(value) for value in range_raw)
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError(
+                "'uniform' parameter distribution 'range' must contain only numbers"
+            ) from exc
+        if len(values) != 2:
+            raise ConfigurationError(
+                "'uniform' parameter distribution 'range' must have exactly two values"
+            )
+        lower, upper = values
+        if upper < lower:
+            raise ConfigurationError(
+                "'uniform' parameter distribution 'range' must have min <= max"
+            )
+        parameters: dict[str, Any] = {"range": (lower, upper)}
+    elif distribution_name == "exponential":
+        allowed_keys = {"distribution_name", "draw_count", "parameters"}
+        rate_raw = params_source.get("rate")
+        try:
+            rate = float(rate_raw)
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError(
+                "'exponential' parameter distribution requires numeric 'rate'"
+            ) from exc
+        if rate <= 0:
+            raise ConfigurationError(
+                "'exponential' parameter distribution 'rate' must be positive"
+            )
+        parameters = {"rate": rate}
+    elif distribution_name == "truncated_exponential":
+        allowed_keys = {
+            "distribution_name",
+            "draw_count",
+            "parameters",
+        }
+        rate_raw = params_source.get("rate")
+        min_raw = params_source.get("min")
+        max_raw = params_source.get("max")
+        try:
+            rate = float(rate_raw)
+            min_value = float(min_raw)
+            max_value = float(max_raw)
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError(
+                "'truncated_exponential' parameter distribution requires numeric 'rate', 'min', and 'max'"
+            ) from exc
+        if rate <= 0 or max_value <= 0:
+            raise ConfigurationError(
+                "'truncated_exponential' parameter distribution requires positive 'rate' and 'max'"
+            )
+        if min_value < 0 or min_value >= max_value:
+            raise ConfigurationError(
+                "'truncated_exponential' parameter distribution 'min' must be >= 0 and < 'max'"
+            )
+        parameters = {"rate": rate, "min": min_value, "max": max_value}
+    else:
+        allowed_keys = {
+            "distribution_name",
+            "draw_count",
+            "parameters",
+        }
+        mean_raw = params_source.get("mean")
+        variance_raw = params_source.get("variance")
+        min_raw = params_source.get("min")
+        max_raw = params_source.get("max")
+        try:
+            mean = float(mean_raw)
+            variance = float(variance_raw)
+            min_value = float(min_raw) if min_raw is not None else None
+            max_value = float(max_raw) if max_raw is not None else None
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError(
+                "'normal' parameter distribution requires numeric 'mean' and 'variance'"
+            ) from exc
+        if variance <= 0:
+            raise ConfigurationError(
+                "'normal' parameter distribution 'variance' must be positive"
+            )
+        parameters = {"mean": mean, "variance": variance}
+        if min_value is not None:
+            parameters["min"] = min_value
+        if max_value is not None:
+            parameters["max"] = max_value
+
+    extra_keys = set(raw.keys()) - allowed_keys
+    if extra_keys:
+        extra_list = ", ".join(sorted(str(key) for key in extra_keys))
+        raise ConfigurationError(
+            f"Unsupported keys in 'sequence.model_parameters.parameter_distribution': {extra_list}"
+        )
+
+    return ModelParameterDistributionSettings(
+        distribution_name=distribution_name,
+        draw_count=draw_count,
+        parameters=parameters,
+    )
 
 
 def _resolve_data_root(base_path: Optional[Path]) -> Path:
@@ -612,12 +961,16 @@ class _TopologyNode:
 def _extract_root_children(expr: str) -> tuple[str, str, bool, bool]:
     expr = expr.strip()
     if not (expr.startswith("(") and expr.endswith(")")):
-        raise ConfigurationError("Rooted topology definitions must start and end with parentheses")
+        raise ConfigurationError(
+            "Rooted topology definitions must start and end with parentheses"
+        )
 
     inner = expr[1:-1].strip()
     parts = _split_top_level(inner)
     if len(parts) != 2:
-        raise ConfigurationError("Rooted topology definitions must describe exactly two child subtrees")
+        raise ConfigurationError(
+            "Rooted topology definitions must describe exactly two child subtrees"
+        )
 
     left_raw = parts[0].strip()
     right_raw = parts[1].strip()
@@ -626,14 +979,18 @@ def _extract_root_children(expr: str) -> tuple[str, str, bool, bool]:
     left_expr = left_raw[1:].strip() if left_marked else left_raw
     right_expr = right_raw[1:].strip() if right_marked else right_raw
     if not left_expr or not right_expr:
-        raise ConfigurationError("Topology definitions must contain taxa on both sides of ':'")
+        raise ConfigurationError(
+            "Topology definitions must contain taxa on both sides of ':'"
+        )
 
     return left_expr, right_expr, left_marked, right_marked
 
 
 def _reject_internal_root_marker(expr: str) -> None:
     if ":" in expr:
-        raise ConfigurationError(": markers are only allowed immediately before the root split")
+        raise ConfigurationError(
+            ": markers are only allowed immediately before the root split"
+        )
 
 
 def _split_top_level(expr: str) -> list[str]:
@@ -645,7 +1002,9 @@ def _split_top_level(expr: str) -> list[str]:
             depth += 1
         elif char == ")":
             if depth == 0:
-                raise ConfigurationError("Unbalanced parentheses in topology definition")
+                raise ConfigurationError(
+                    "Unbalanced parentheses in topology definition"
+                )
             depth -= 1
         elif char == "," and depth == 0:
             parts.append(expr[start:index])
@@ -738,20 +1097,24 @@ def _finalize_topology(
     taxa_set: set[str],
 ) -> TopologySpec:
     if not tokens:
-        raise ConfigurationError("Topology definitions must reference at least one group")
+        raise ConfigurationError(
+            "Topology definitions must reference at least one group"
+        )
 
     flattened = tuple(taxon for group in tokens for taxon in group)
     duplicates = _find_duplicate_taxa(flattened)
     if duplicates:
         raise ConfigurationError(
-            f"Duplicate taxa found in topology '{original}': " + ", ".join(sorted(duplicates))
+            f"Duplicate taxa found in topology '{original}': "
+            + ", ".join(sorted(duplicates))
         )
 
     seen = set(flattened)
     if seen != taxa_set:
         missing = taxa_set - seen
         raise ConfigurationError(
-            "Each topology must reference all taxa exactly once; missing: " + ", ".join(sorted(missing))
+            "Each topology must reference all taxa exactly once; missing: "
+            + ", ".join(sorted(missing))
         )
 
     return TopologySpec(tokens=tuple(tokens), root_index=root_index)
