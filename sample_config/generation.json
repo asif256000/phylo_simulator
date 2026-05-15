@@ -3,6 +3,7 @@
     "description": "Minimal IQ-TREE based configuration for two taxa with uniform distribution",
     "seed": 123,
     "parallel_cores": 2,
+    "debug": true,
     "tree": {
       "taxa_labels": ["A", "B"],
       "branch_length_distributions": {
@@ -274,6 +275,63 @@
     "dataset": {
       "tree_count": 200,
       "output_name": "auto_parallel_dataset",
+      "tree_chunk_size": 10000
+    },
+    "verify": {
+      "padding_for_fasta": false
+    }
+  }
+  ,
+  {
+    "description": "IQ-TREE UNREST example with model parameter distribution (normal draws)",
+    "seed": 20240515,
+    "parallel_cores": 2,
+    "tree": {
+      "taxa_labels": ["A","B","C"],
+      "branch_length_distributions": {
+        "normal": 1.0
+      },
+      "branch_length_params": {
+        "normal": {
+          "mean": 0.5,
+          "variance": 0.04,
+          "min": 0.0,
+          "max": 1.0
+        }
+      },
+      "rooted": true,
+      "split_root_branch": true,
+      "topologies": ["((A,B),:C)"]
+    },
+    "sequence": {
+      "length": 1000,
+      "model": "UNREST",
+      "model_parameters": {
+        "parameter_distribution": {
+          "distribution_name": "normal",
+          "draw_count": 11,
+          "parameters": {
+            "mean": 1.0,
+            "variance": 0.2,
+            "min": 0.8,
+            "max": 1.2
+          }
+        }
+      }
+    },
+    "simulation": {
+      "backend": "iqtree",
+      "iqtree_path": "/absolute/path/to/iqtree3",
+      "seqgen_path": "/absolute/path/to/seq-gen",
+      "seqgen_kwargs": {},
+      "indel": {
+        "enabled": false,
+        "rates": null
+      }
+    },
+    "dataset": {
+      "tree_count": 20,
+      "output_name": "unrest_paramdist",
       "tree_chunk_size": 10000
     },
     "verify": {
