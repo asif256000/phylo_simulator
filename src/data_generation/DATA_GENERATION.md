@@ -14,7 +14,8 @@ The configuration file contains five main sections:
 
 - **`seed`**: RNG seed for reproducibility.
 - **`tree`**: Taxa labels, branch length distributions with weights, distribution-specific parameters, rootedness flag, optional `split_root_branch`, and required `topologies`.
-- **`sequence`**: Sequence length and substitution model.
+- **`debug`**: Optional guarded XML debug metadata output. When enabled, and `dataset.tree_count` is ≤ 500, each tree records a concise set of diagnostic fields: the literal `topology` string, the `newick` tree, the chosen `branch_length_distribution` name, and the exact `sequence_command` used to generate sequences. For IQ-TREE runs, the generator also reads the simulator log file and records the reported `model`, `seed`, `state_frequencies` (`pi` values), and `rate_matrix` (`Q` matrix). The generator intentionally omits embedding the raw branch-length or model-parameter distribution objects in the XML to keep debug annotations compact.
+- **`sequence`**: Sequence length, substitution model, and optional IQ-TREE-only model parameters that are appended as `MODEL{...}`.
 - **`simulation`**: Backend (`iqtree` or `seqgen`), executable paths, optional Seq-Gen keyword arguments, and indel parameters.
 - **`dataset`**: Number of trees to simulate (`tree_count`), output file basename (`output_name`), and optional chunking (`tree_chunk_size`).
 - **`parallel_cores`**: Level of parallelization. Defaults to `0` (auto-detect all available CPU cores). Set to `1` to disable parallelism when debugging.
@@ -60,6 +61,7 @@ The generator assigns **one distribution per tree** based on the configured weig
 - **`uniform`**: Sample uniformly from a specified range `[min, max]`
 - **`exponential`**: Sample from an exponential distribution with rate parameter λ
 - **`truncated_exponential`**: Sample from an exponential distribution truncated to a bounded range `[min, max]`
+- **`normal`**: Sample from a normal distribution with configurable mean and variance (optionally bounded)
 
 **Configuration**:
 ```yaml
@@ -115,6 +117,7 @@ When `tree.split_root_branch: false`, rooted root-side edges are sampled indepen
 - **uniform**: Must provide `range: [min, max]` where min ≥ 0, max > 0, max > min
 - **exponential**: Must provide `rate: <positive>` where rate > 0
 - **truncated_exponential**: Must provide `rate: <positive>` and `max: <positive>`; `min` defaults to 0.0 if not specified, must satisfy 0.0 ≤ min < max. Sampling uses the closed-form inverse CDF so values are always within bounds (no rejection/resampling).
+- **normal**: Must provide `mean: <number>` and `variance: <non-negative>`; optional `min`/`max` bounds may be supplied. When bounds are supplied, the sampler redraws until a sample lies within the bounds (the implementation retries up to an internal limit and raises if draws repeatedly fail).
 
 ## Generate Trees and Sequences
 
@@ -203,7 +206,7 @@ verify_sequences_from_config("path/to/your/config.yaml")
 The generated PhyloXML file contains:
 
 - **Phylogenies**: Each tree with simulated sequences.
-- **Metadata**: Topology definition, branch lengths, taxon labels, and sequence length.
+- **Metadata**: Topology definition, branch lengths, taxon labels, sequence length, and any debug annotations when `debug: true` is enabled.
 - **Sequences**: Aligned sequences for each taxon in each tree. Indel padding is applied during NumPy dataset creation as all-zero rows; deletion gaps remain `-`. IQ-TREE indel sizes can be configured via `simulation.indel.sizes` (passed through to AliSim).
 
 The file is compatible with standard PhyloXML tools and can be parsed by the `xml_parser` module for conversion to NumPy arrays.
