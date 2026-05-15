@@ -1,27 +1,34 @@
 from __future__ import annotations
 
+import json
+import math
+import multiprocessing as mp
 import os
 import random
+import re
 import subprocess
 import tempfile
-import multiprocessing as mp
-import math
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 from Bio import SeqIO
 from Bio.Phylo import PhyloXML
 from Bio.Phylo._io import write as phylo_write
-from Bio.Phylo.BaseTree import Clade, Tree as BaseTree
-from Bio.Phylo.PhyloXML import Phylogeny, Other
+from Bio.Phylo.BaseTree import Clade
+from Bio.Phylo.BaseTree import Tree as BaseTree
+from Bio.Phylo.PhyloXML import Other, Phylogeny
 
 from src.utils import flatten_topology, format_topology, infer_branch_output_count
 
-from .config import GenerationConfig, TopologySpec
+from .config import (
+    GenerationConfig,
+    ModelParameterDistributionSettings,
+    SequenceModelParameters,
+    TopologySpec,
+)
 
 
 @dataclass
@@ -32,6 +39,7 @@ class TreeSequenceResult:
     sequences: dict[str, str]
     aligned: bool
     topology: TopologySpec
+    debug_metadata: dict[str, str] | None = None
 
 
 class TreeSequenceGenerator:
@@ -40,8 +48,14 @@ class TreeSequenceGenerator:
     def __init__(self, config: GenerationConfig) -> None:
         self.config = config
         self._rng = random.Random(config.seed)
-        self.parallel_cores = mp.cpu_count() if config.parallel_cores == 0 else max(1, config.parallel_cores)
+        self.parallel_cores = (
+            mp.cpu_count()
+            if config.parallel_cores == 0
+            else max(1, config.parallel_cores)
+        )
         self._active_distribution: str | None = None
+        self._last_sequence_command: str | None = None
+        self._last_iqtree_log_metadata: dict[str, str] | None = None
 
     @classmethod
     def from_config_file(cls, config_path: Path | str) -> "TreeSequenceGenerator":
@@ -60,8 +74,17 @@ class TreeSequenceGenerator:
         try:
             tree, used_topology = self._build_tree(topology_override=topology)
             newick_str = self._tree_to_newick(tree)
-            sequences, aligned = self._simulate_sequences(newick_str)
-            return TreeSequenceResult(tree=tree, sequences=sequences, aligned=aligned, topology=used_topology)
+            sequences, aligned, debug_metadata = self._simulate_sequences(
+                newick_str,
+                distribution=distribution,
+            )
+            return TreeSequenceResult(
+                tree=tree,
+                sequences=sequences,
+                aligned=aligned,
+                topology=used_topology,
+                debug_metadata=debug_metadata,
+            )
         finally:
             self._active_distribution = previous
 
@@ -70,10 +93,15 @@ class TreeSequenceGenerator:
         topology: TopologySpec | None = None,
         distribution: str | None = None,
     ) -> tuple[Phylogeny, bool]:
-        result = self.generate_tree_and_sequences(topology=topology, distribution=distribution)
-        phylogeny = self._attach_sequences(result.tree, result.sequences, result.aligned)
+        result = self.generate_tree_and_sequences(
+            topology=topology, distribution=distribution
+        )
+        phylogeny = self._attach_sequences(
+            result.tree, result.sequences, result.aligned
+        )
         self._annotate_topology(phylogeny, result.topology)
-        self._annotate_newick(phylogeny, self._tree_to_newick(result.tree).strip())
+        if result.debug_metadata:
+            self._annotate_debug_metadata(phylogeny, result.debug_metadata)
         return phylogeny, result.aligned
 
     def generate_phylogenies(self) -> tuple[list[Phylogeny], bool]:
@@ -101,7 +129,9 @@ class TreeSequenceGenerator:
             ctx = mp.get_context("spawn")
             try:
                 with ctx.Pool(processes=pool_size, maxtasksperchild=1) as pool:
-                    for phylogeny, aligned in pool.imap(_generate_phylogeny_worker, payloads, chunksize=1):
+                    for phylogeny, aligned in pool.imap(
+                        _generate_phylogeny_worker, payloads, chunksize=1
+                    ):
                         phylogenies.append(phylogeny)
                         all_aligned = all_aligned and aligned
             except Exception as exc:
@@ -122,7 +152,9 @@ class TreeSequenceGenerator:
 
         footer: str | None = None
         with output_path.open("w", encoding="utf-8") as handle:
-            for index, (phylogenies, _aligned) in enumerate(self._iter_phylogeny_chunks(chunk_size)):
+            for index, (phylogenies, _aligned) in enumerate(
+                self._iter_phylogeny_chunks(chunk_size)
+            ):
                 phyloxml = PhyloXML.Phyloxml({})
                 phyloxml.phylogenies = phylogenies
                 xml_text = self._render_phyloxml(phyloxml)
@@ -138,7 +170,9 @@ class TreeSequenceGenerator:
                 handle.write(footer)
         return output_path
 
-    def _iter_phylogeny_chunks(self, chunk_size: int) -> Iterator[tuple[list[Phylogeny], bool]]:
+    def _iter_phylogeny_chunks(
+        self, chunk_size: int
+    ) -> Iterator[tuple[list[Phylogeny], bool]]:
         tree_count = self.config.dataset.tree_count
         schedule = self._distribution_topology_schedule(tree_count)
         seeds = [self._rng.randint(0, 2**32 - 1) for _ in range(len(schedule))]
@@ -148,7 +182,9 @@ class TreeSequenceGenerator:
                 end = start + chunk_size
                 phylogenies: list[Phylogeny] = []
                 chunk_aligned = True
-                for seed, (topology, distribution) in zip(seeds[start:end], schedule[start:end]):
+                for seed, (topology, distribution) in zip(
+                    seeds[start:end], schedule[start:end]
+                ):
                     phylogeny, aligned = _generate_phylogeny_worker(
                         (self.config, seed, topology, distribution)
                     )
@@ -166,7 +202,7 @@ class TreeSequenceGenerator:
         try:
             with ctx.Pool(processes=pool_size, maxtasksperchild=1) as pool:
                 for start in range(0, len(payloads_all), chunk_size):
-                    chunk_payloads = payloads_all[start:start + chunk_size]
+                    chunk_payloads = payloads_all[start : start + chunk_size]
                     phylogenies = []
                     chunk_aligned = True
                     for phylogeny, aligned in pool.imap(
@@ -198,7 +234,9 @@ class TreeSequenceGenerator:
         footer = xml_text[close_match.start() :]
         return header, body, footer
 
-    def _build_tree(self, topology_override: TopologySpec | None = None) -> tuple[BaseTree, TopologySpec]:
+    def _build_tree(
+        self, topology_override: TopologySpec | None = None
+    ) -> tuple[BaseTree, TopologySpec]:
         taxa_count = self.config.tree.taxa_count
         topology = topology_override or self._select_topology(taxa_count)
 
@@ -222,12 +260,16 @@ class TreeSequenceGenerator:
 
     def _build_three_taxa_tree(self, topology: TopologySpec) -> BaseTree:
         if len(flatten_topology(topology)) != 3:
-            raise ValueError("Three-taxa configurations must reference exactly three taxa")
+            raise ValueError(
+                "Three-taxa configurations must reference exactly three taxa"
+            )
         return self._build_tree_from_topology(topology)
 
     def _build_four_taxa_tree(self, topology: TopologySpec) -> BaseTree:
         if len(flatten_topology(topology)) != 4:
-            raise ValueError("Four-taxa configurations must reference exactly four taxa")
+            raise ValueError(
+                "Four-taxa configurations must reference exactly four taxa"
+            )
         return self._build_tree_from_topology(topology)
 
     def _select_topology(self, taxa_count: int) -> TopologySpec:
@@ -236,10 +278,15 @@ class TreeSequenceGenerator:
 
     def _topology_candidates(self, taxa_count: int) -> list[TopologySpec]:
         configured = self.config.tree.topologies
-        candidates = [topology for topology in configured if len(flatten_topology(topology)) == taxa_count]
+        candidates = [
+            topology
+            for topology in configured
+            if len(flatten_topology(topology)) == taxa_count
+        ]
         if not candidates:
             raise ValueError(
-                "No configured topologies match the requested taxa count of " f"{taxa_count}."
+                "No configured topologies match the requested taxa count of "
+                f"{taxa_count}."
             )
         return candidates
 
@@ -248,7 +295,9 @@ class TreeSequenceGenerator:
         count = len(candidates)
         return [candidates[index % count] for index in range(tree_count)]
 
-    def _distribution_topology_schedule(self, tree_count: int) -> list[tuple[TopologySpec, str]]:
+    def _distribution_topology_schedule(
+        self, tree_count: int
+    ) -> list[tuple[TopologySpec, str]]:
         candidates = self._topology_candidates(self.config.tree.taxa_count)
         if not candidates:
             return []
@@ -280,11 +329,15 @@ class TreeSequenceGenerator:
 
         if self.config.tree.rooted:
             if topology.root_index is None:
-                raise ValueError("Rooted tree configurations require ':' in the topology definition")
+                raise ValueError(
+                    "Rooted tree configurations require ':' in the topology definition"
+                )
             left_groups = tuple(group_clades[: topology.root_index + 1])
             right_groups = tuple(group_clades[topology.root_index + 1 :])
             if not left_groups or not right_groups:
-                raise ValueError("Rooted topologies must include taxa on both sides of ':'")
+                raise ValueError(
+                    "Rooted topologies must include taxa on both sides of ':'"
+                )
             left_subtree = self._build_chain_subtree(left_groups)
             right_subtree = self._build_chain_subtree(right_groups)
             root_clade = Clade(clades=[left_subtree, right_subtree])
@@ -354,7 +407,9 @@ class TreeSequenceGenerator:
         try:
             connector_length = next(length_iter)
         except StopIteration as exc:  # pragma: no cover - defensive guard
-            raise RuntimeError("Missing branch length sample for rooted split connector") from exc
+            raise RuntimeError(
+                "Missing branch length sample for rooted split connector"
+            ) from exc
 
         target_child = self._root_side_child(root, topology)
         if target_child is None:
@@ -380,7 +435,9 @@ class TreeSequenceGenerator:
             enforce_min=True,
         )
 
-    def _assign_small_tree_branch_lengths(self, root: Clade, topology: TopologySpec, segment_count: int) -> None:
+    def _assign_small_tree_branch_lengths(
+        self, root: Clade, topology: TopologySpec, segment_count: int
+    ) -> None:
         samples = [self._sample_branch_length() for _ in range(segment_count)]
 
         if self.config.tree.taxa_count == 2:
@@ -405,7 +462,9 @@ class TreeSequenceGenerator:
         if remaining:
             self._populate_branch_lengths(root, iter(remaining))
 
-    def _assign_two_taxa_branch_lengths(self, root: Clade, samples: list[float]) -> None:
+    def _assign_two_taxa_branch_lengths(
+        self, root: Clade, samples: list[float]
+    ) -> None:
         if not samples:
             return
         connector_length = samples[0]
@@ -449,7 +508,9 @@ class TreeSequenceGenerator:
             children[0].branch_length = connector_length
             return
 
-        split_value, remainder = self._split_length(connector_length, enforce_min=enforce_min)
+        split_value, remainder = self._split_length(
+            connector_length, enforce_min=enforce_min
+        )
 
         if target_child is None:
             if self._rng.random() < 0.5:
@@ -479,7 +540,7 @@ class TreeSequenceGenerator:
         if upper_bound == lower_bound:
             first = upper_bound
         else:
-            first = self._rng.uniform(lower_bound, upper_bound)
+            first = self._sample_uniform(lower_bound, upper_bound)
         second = max(total - first, 0.0)
         return first, second
 
@@ -496,7 +557,9 @@ class TreeSequenceGenerator:
                 return child
         return None
 
-    def _assign_rooted_branch_lengths(self, root: Clade, length_iter: Iterator[float]) -> None:
+    def _assign_rooted_branch_lengths(
+        self, root: Clade, length_iter: Iterator[float]
+    ) -> None:
         children = list(root.clades)
         if len(children) != 2:
             # Degenerate rooted trees (e.g., single taxon) fall back to the unrooted logic.
@@ -506,14 +569,20 @@ class TreeSequenceGenerator:
         try:
             connector_length = next(length_iter)
         except StopIteration as exc:  # pragma: no cover - defensive guard
-            raise RuntimeError("Insufficient branch length samples for root connector") from exc
+            raise RuntimeError(
+                "Insufficient branch length samples for root connector"
+            ) from exc
 
         min_len = self.config.tree.min_branch_length
         lower_bound = min_len
         upper_bound = connector_length
         if upper_bound < lower_bound:
             lower_bound = upper_bound
-        split_value = upper_bound if upper_bound == lower_bound else self._rng.uniform(lower_bound, upper_bound)
+        split_value = (
+            upper_bound
+            if upper_bound == lower_bound
+            else self._sample_uniform(lower_bound, upper_bound)
+        )
         remainder = max(connector_length - split_value, 0.0)
 
         if self._rng.random() < 0.5:
@@ -526,7 +595,9 @@ class TreeSequenceGenerator:
         for child in children:
             self._populate_branch_lengths(child, length_iter)
 
-    def _assign_rooted_no_split(self, root: Clade, length_iter: Iterator[float]) -> None:
+    def _assign_rooted_no_split(
+        self, root: Clade, length_iter: Iterator[float]
+    ) -> None:
         children = list(root.clades)
         if len(children) < 2:
             self._assign_unrooted_branch_lengths(root, length_iter, None)
@@ -536,7 +607,9 @@ class TreeSequenceGenerator:
             try:
                 child.branch_length = next(length_iter)
             except StopIteration as exc:  # pragma: no cover - defensive guard
-                raise RuntimeError("Missing branch length sample for rooted tree") from exc
+                raise RuntimeError(
+                    "Missing branch length sample for rooted tree"
+                ) from exc
 
         self._populate_branch_lengths(root, length_iter)
 
@@ -553,7 +626,9 @@ class TreeSequenceGenerator:
             try:
                 target_child.branch_length = next(length_iter)
             except StopIteration as exc:  # pragma: no cover - defensive guard
-                raise RuntimeError("Missing branch length sample for two-taxa unrooted tree") from exc
+                raise RuntimeError(
+                    "Missing branch length sample for two-taxa unrooted tree"
+                ) from exc
             return
 
         children = list(root.clades)
@@ -561,7 +636,9 @@ class TreeSequenceGenerator:
             try:
                 connector_length = next(length_iter)
             except StopIteration as exc:  # pragma: no cover - defensive guard
-                raise RuntimeError("Missing branch length sample for unrooted connector") from exc
+                raise RuntimeError(
+                    "Missing branch length sample for unrooted connector"
+                ) from exc
 
             implicit_child = self._select_unrooted_implicit_child(root, first_taxon)
             if implicit_child is children[0]:
@@ -583,7 +660,9 @@ class TreeSequenceGenerator:
 
         self._populate_branch_lengths(root, length_iter)
 
-    def _select_unrooted_implicit_child(self, root: Clade, first_taxon: str | None) -> Clade | None:
+    def _select_unrooted_implicit_child(
+        self, root: Clade, first_taxon: str | None
+    ) -> Clade | None:
         children = list(root.clades)
         if len(children) != 2:
             return None
@@ -598,13 +677,17 @@ class TreeSequenceGenerator:
         preferred = self._child_containing_taxon(root, first_taxon)
         return preferred if preferred is not None else children[0]
 
-    def _populate_branch_lengths(self, clade: Clade, length_iter: Iterator[float]) -> None:
+    def _populate_branch_lengths(
+        self, clade: Clade, length_iter: Iterator[float]
+    ) -> None:
         for child in clade.clades:
             if child.branch_length is None:
                 try:
                     child.branch_length = next(length_iter)
                 except StopIteration as exc:  # pragma: no cover - defensive guard
-                    raise RuntimeError("Ran out of sampled branch lengths while assigning the tree") from exc
+                    raise RuntimeError(
+                        "Ran out of sampled branch lengths while assigning the tree"
+                    ) from exc
             self._populate_branch_lengths(child, length_iter)
 
     def _child_containing_taxon(self, root: Clade, taxon: str | None) -> Clade | None:
@@ -640,66 +723,247 @@ class TreeSequenceGenerator:
         if selected_dist == "uniform":
             range_vals = dist_params.get("range")
             if not range_vals or len(range_vals) != 2:
-                raise ValueError("uniform distribution requires 'range' parameter with two values")
+                raise ValueError(
+                    "uniform distribution requires 'range' parameter with two values"
+                )
             min_val, max_val = range_vals
-            return self._rng.uniform(min_val, max_val)
+            return self._sample_uniform(min_val, max_val)
 
         if selected_dist == "exponential":
             rate = dist_params.get("rate")
             if rate is None or rate <= 0:
-                raise ValueError("exponential distribution requires positive 'rate' parameter")
-            return self._rng.expovariate(rate)
+                raise ValueError(
+                    "exponential distribution requires positive 'rate' parameter"
+                )
+            return self._sample_exponential(rate)
 
         if selected_dist == "truncated_exponential":
-            rate = dist_params.get("rate")
-            min_val = dist_params.get("min", 0.0)
-            max_val = dist_params.get("max")
+            return self._sample_truncated_exponential(dist_params)
 
-            if rate is None or rate <= 0:
-                raise ValueError("truncated_exponential requires positive 'rate' parameter")
-            if max_val is None or max_val <= 0:
-                raise ValueError("truncated_exponential requires positive 'max' parameter")
-            if min_val < 0 or min_val >= max_val:
-                raise ValueError("truncated_exponential 'min' must be >= 0 and < 'max'")
-
-            span = max_val - min_val
-            u = self._rng.random()
-            scale = 1.0 - math.exp(-rate * span)
-            if scale <= 0:
-                return min_val
-            return min_val - (1.0 / rate) * math.log(1.0 - u * scale)
+        if selected_dist == "normal":
+            mean = dist_params.get("mean")
+            variance = dist_params.get("variance")
+            if mean is None or variance is None:
+                raise ValueError(
+                    "normal distribution requires 'mean' and 'variance' parameters"
+                )
+            min_bound = dist_params.get("min")
+            max_bound = dist_params.get("max")
+            min_bound_f = None if min_bound is None else float(min_bound)
+            max_bound_f = None if max_bound is None else float(max_bound)
+            return self._sample_normal(
+                float(mean),
+                float(variance),
+                min_bound_f,
+                max_bound_f,
+            )
 
         raise ValueError(f"Unsupported branch length distribution '{selected_dist}'")
+
+    def _sample_truncated_exponential(self, params: Mapping[str, Any]) -> float:
+        rate = params.get("rate")
+        min_val = params.get("min", 0.0)
+        max_val = params.get("max")
+
+        if rate is None or rate <= 0:
+            raise ValueError("truncated_exponential requires positive 'rate' parameter")
+        if max_val is None or max_val <= 0:
+            raise ValueError("truncated_exponential requires positive 'max' parameter")
+        if min_val < 0 or min_val >= max_val:
+            raise ValueError("truncated_exponential 'min' must be >= 0 and < 'max'")
+
+        span = max_val - min_val
+        u = self._rng.random()
+        scale = 1.0 - math.exp(-rate * span)
+        if scale <= 0:
+            return min_val
+        return min_val - (1.0 / rate) * math.log(1.0 - u * scale)
+
+    def _sample_uniform(self, lower: float, upper: float) -> float:
+        if upper <= lower:
+            raise ValueError("uniform draw requires upper > lower")
+        return self._rng.uniform(lower, upper)
+
+    def _sample_exponential(self, rate: float) -> float:
+        if rate <= 0:
+            raise ValueError("exponential requires positive rate")
+        return self._rng.expovariate(rate)
+
+    def _sample_normal(
+        self,
+        mean: float,
+        variance: float,
+        min_bound: Optional[float] = None,
+        max_bound: Optional[float] = None,
+    ) -> float:
+        if variance < 0:
+            raise ValueError("variance must be non-negative")
+        std_dev = math.sqrt(variance)
+
+        # Degenerate case: zero variance
+        if std_dev == 0:
+            if (min_bound is not None and mean < min_bound) or (
+                max_bound is not None and mean > max_bound
+            ):
+                raise ValueError(
+                    "variance is zero and mean lies outside the provided bounds (no possible sample)."
+                )
+            return mean
+
+        max_rounds = 10_000
+        rounds = 0
+        while True:
+            val = self._rng.gauss(mean, std_dev)
+            if (min_bound is None or val >= min_bound) and (
+                max_bound is None or val <= max_bound
+            ):
+                return val
+            rounds += 1
+            if rounds >= max_rounds:
+                raise RuntimeError(
+                    f"Exceeded maximum resampling rounds ({max_rounds}). Bounds too restrictive."
+                )
+
+    # Model-parameter drawing uses the single-sample `_sample_*` helpers.
+
+    def _sample_model_parameters(
+        self, model_parameters: SequenceModelParameters
+    ) -> tuple[float, ...]:
+        if model_parameters.fixed_parameters is not None:
+            return model_parameters.fixed_parameters
+
+        distribution = model_parameters.parameter_distribution
+        if distribution is None:
+            return tuple()
+
+        return tuple(self._draw_model_parameter_values(distribution))
+
+    def _draw_model_parameter_values(
+        self, distribution: ModelParameterDistributionSettings
+    ) -> list[float]:
+        draw_count = distribution.draw_count
+        params = distribution.parameters
+
+        if distribution.distribution_name == "uniform":
+            lower, upper = params["range"]
+            return [
+                self._sample_uniform(float(lower), float(upper))
+                for _ in range(draw_count)
+            ]
+
+        if distribution.distribution_name == "exponential":
+            rate = float(params["rate"])
+            return [self._sample_exponential(rate) for _ in range(draw_count)]
+
+        if distribution.distribution_name == "truncated_exponential":
+            return [
+                self._sample_truncated_exponential(params) for _ in range(draw_count)
+            ]
+
+        if distribution.distribution_name == "normal":
+            mean = float(params["mean"])
+            variance = float(params["variance"])
+            min_b = params.get("min")
+            max_b = params.get("max")
+            min_b_f = None if min_b is None else float(min_b)
+            max_b_f = None if max_b is None else float(max_b)
+            return [
+                self._sample_normal(mean, variance, min_b_f, max_b_f)
+                for _ in range(draw_count)
+            ]
+
+        raise ValueError(
+            f"Unsupported model parameter distribution '{distribution.distribution_name}'"
+        )
+
+    def _format_iqtree_model(
+        self,
+        model: str,
+        model_parameters: SequenceModelParameters | None,
+        *,
+        parameter_values: tuple[float, ...] | None = None,
+    ) -> str:
+        if model_parameters is None:
+            return model
+
+        if parameter_values is None:
+            parameter_values = self._sample_model_parameters(model_parameters)
+        if not parameter_values:
+            return model
+
+        rounded_values = [round(value, 6) for value in parameter_values]
+        parameters_string = "/".join(str(value) for value in rounded_values)
+        return f"{model}{{{parameters_string}}}"
 
     def _tree_to_newick(self, tree: BaseTree) -> str:
         with StringIO() as handle:
             phylo_write([tree], handle, "newick")
             return handle.getvalue()
 
-    def _simulate_sequences(self, newick_tree: str) -> tuple[dict[str, str], bool]:
+    def _simulate_sequences(
+        self,
+        newick_tree: str,
+        *,
+        distribution: str | None = None,
+    ) -> tuple[dict[str, str], bool, dict[str, str] | None]:
         simulation = self.config.simulation
         indel_rates = simulation.indel.rates if simulation.indel.enabled else None
         indel_sizes = simulation.indel.sizes if simulation.indel.enabled else None
+        debug_metadata: dict[str, str] | None = None
 
         simulator = simulation.backend
         if simulator == "iqtree":
-            sequences = self._simulate_with_iqtree(
+            model_parameter_values = None
+            if self.config.debug and self.config.sequence.model_parameters is not None:
+                model_parameter_values = self._sample_model_parameters(
+                    self.config.sequence.model_parameters
+                )
+            result = self._simulate_with_iqtree(
                 newick_tree,
                 seq_length=self.config.sequence.length,
                 model=self.config.sequence.model,
+                model_parameters=self.config.sequence.model_parameters,
+                model_parameter_values=model_parameter_values,
                 indel_rate=indel_rates,
                 indel_size=indel_sizes,
                 iqtree_path=simulation.iqtree_path,
             )
+            if isinstance(result, tuple):
+                sequences, sequence_command = result
+            else:
+                sequences = result
+                sequence_command = None
+
+            if self.config.debug:
+                debug_metadata = self._build_debug_metadata(
+                    distribution=distribution,
+                    newick=newick_tree.strip(),
+                    sequence_command=sequence_command,
+                    iqtree_log_metadata=getattr(
+                        self, "_last_iqtree_log_metadata", None
+                    ),
+                )
         elif simulator == "seqgen":
             if indel_rates is not None or indel_sizes is not None:
                 raise ValueError("Seq-Gen simulation does not support indel parameters")
-            sequences = self._simulate_with_seqgen(
+            result = self._simulate_with_seqgen(
                 newick_tree,
                 seq_length=self.config.sequence.length,
                 seqgen_path=simulation.seqgen_path,
                 seqgen_kwargs=simulation.seqgen_kwargs,
             )
+            if isinstance(result, tuple):
+                sequences, sequence_command = result
+            else:
+                sequences = result
+                sequence_command = getattr(self, "_last_sequence_command", None)
+
+            if self.config.debug:
+                debug_metadata = self._build_debug_metadata(
+                    distribution=distribution,
+                    newick=newick_tree.strip(),
+                    sequence_command=sequence_command,
+                )
         else:  # pragma: no cover - guarded during config parsing
             raise ValueError(f"Unsupported simulator '{simulator}'")
 
@@ -708,12 +972,14 @@ class TreeSequenceGenerator:
         for taxon in taxa:
             seq_value = sequences.get(taxon)
             if seq_value is None:
-                raise RuntimeError(f"Simulator output missing sequence for taxon '{taxon}'")
+                raise RuntimeError(
+                    f"Simulator output missing sequence for taxon '{taxon}'"
+                )
             ordered_sequences[taxon] = seq_value
 
         unique_lengths = {len(value) for value in ordered_sequences.values()}
         aligned = len(unique_lengths) == 1
-        return ordered_sequences, aligned
+        return ordered_sequences, aligned, debug_metadata
 
     def _attach_sequences(
         self,
@@ -740,28 +1006,62 @@ class TreeSequenceGenerator:
         else:
             phylogeny.other.append(other_entry)
 
-    def _annotate_newick(self, phylogeny: Phylogeny, newick: str) -> None:
-        other_entry = Other(tag="newick", value=newick)
+    def _annotate_debug_metadata(
+        self, phylogeny: Phylogeny, metadata: Mapping[str, str]
+    ) -> None:
+        entries = [Other(tag=tag, value=value) for tag, value in metadata.items()]
         existing = getattr(phylogeny, "other", None)
         if existing is None:
-            phylogeny.other = [other_entry]
+            phylogeny.other = entries
         else:
-            phylogeny.other.append(other_entry)
+            phylogeny.other.extend(entries)
+
+    def _build_debug_metadata(
+        self,
+        *,
+        distribution: str | None,
+        newick: str | None = None,
+        sequence_command: str | None = None,
+        iqtree_log_metadata: Mapping[str, str] | None = None,
+    ) -> dict[str, str]:
+        metadata: dict[str, str] = {}
+
+        if distribution is not None:
+            metadata["branch_length_distribution"] = distribution
+
+        if newick is not None:
+            metadata["newick"] = newick
+
+        if sequence_command is not None:
+            metadata["sequence_command"] = sequence_command
+
+        if iqtree_log_metadata:
+            metadata.update(iqtree_log_metadata)
+
+        return metadata
+
+    @staticmethod
+    def _serialize_debug_value(value: Any) -> str:
+        return json.dumps(_jsonify(value), separators=(",", ":"), sort_keys=True)
 
     def _simulate_with_iqtree(
         self,
         newick_tree: str,
         seq_length: int,
         model: str,
-        indel_rate: tuple[float, float] | None,
-        indel_size: tuple[str, str] | None,
-        iqtree_path: str | None,
-    ) -> dict[str, str]:
+        model_parameters: SequenceModelParameters | None,
+        model_parameter_values: tuple[float, ...] | None = None,
+        indel_rate: tuple[float, float] | None = None,
+        indel_size: tuple[str, str] | None = None,
+        iqtree_path: str | None = None,
+    ) -> tuple[dict[str, str], str]:
         iqtree_exec = iqtree_path or "iqtree3"
         try:
             subprocess.run([iqtree_exec, "--version"], check=True, capture_output=True)
         except (subprocess.CalledProcessError, FileNotFoundError) as error:
-            raise RuntimeError("IQ-TREE is not installed or not available at the specified path.") from error
+            raise RuntimeError(
+                "IQ-TREE is not installed or not available at the specified path."
+            ) from error
 
         with tempfile.TemporaryDirectory(prefix="iqtree_sim_") as tmp_dir:
             tree_file = os.path.join(tmp_dir, "tree.nwk")
@@ -782,7 +1082,11 @@ class TreeSequenceGenerator:
                 "--length",
                 str(seq_length),
                 "-m",
-                model,
+                self._format_iqtree_model(
+                    model,
+                    model_parameters,
+                    parameter_values=model_parameter_values,
+                ),
                 "--seqtype",
                 "DNA",
                 "-af",
@@ -796,6 +1100,7 @@ class TreeSequenceGenerator:
                 ins_size, del_size = indel_size
                 command.extend(["--indel-size", f"{ins_size},{del_size}"])
 
+            command_str = " ".join(command)
             try:
                 subprocess.run(command, check=True, capture_output=True)
             except subprocess.CalledProcessError as error:
@@ -803,9 +1108,19 @@ class TreeSequenceGenerator:
                 stdout = error.stdout.decode() if error.stdout else ""
                 raise RuntimeError(
                     f"IQ-TREE simulation failed with exit code {error.returncode}.\n"
-                    f"Command: {' '.join(command)}\n"
+                    f"Command: {command_str}\n"
                     f"Stdout:\n{stdout}\nStderr:\n{stderr}"
                 ) from error
+
+            log_path = Path(f"{tree_file}.log")
+            if log_path.exists():
+                self._last_iqtree_log_metadata = self._parse_iqtree_log_metadata(
+                    log_path.read_text(encoding="utf-8")
+                )
+            else:
+                self._last_iqtree_log_metadata = None
+
+            self._last_sequence_command = command_str
 
             supported_ext = {
                 ".fa": "fasta",
@@ -820,10 +1135,14 @@ class TreeSequenceGenerator:
                     continue
                 ext = os.path.splitext(filename)[1].lower()
                 if ext in supported_ext:
-                    candidate_paths.append((os.path.join(tmp_dir, filename), supported_ext[ext]))
+                    candidate_paths.append(
+                        (os.path.join(tmp_dir, filename), supported_ext[ext])
+                    )
 
             if not candidate_paths:
-                raise RuntimeError(f"IQ-TREE did not produce a simulated alignment file in {tmp_dir}")
+                raise RuntimeError(
+                    f"IQ-TREE did not produce a simulated alignment file in {tmp_dir}"
+                )
 
             aligned_sequences = None
             for path, fmt in sorted(candidate_paths, key=lambda item: item[0]):
@@ -837,7 +1156,9 @@ class TreeSequenceGenerator:
                     break
 
             if not aligned_sequences:
-                raise RuntimeError("Unable to read aligned sequences produced by IQ-TREE")
+                raise RuntimeError(
+                    "Unable to read aligned sequences produced by IQ-TREE"
+                )
 
             taxa = self.config.tree.taxa_labels
             seq_map = {record.id: str(record.seq) for record in aligned_sequences}
@@ -850,8 +1171,10 @@ class TreeSequenceGenerator:
                 try:
                     ordered[taxon] = str(next(fallback_iter).seq)
                 except StopIteration as exc:  # pragma: no cover - defensive guard
-                    raise RuntimeError("IQ-TREE output does not contain enough sequences") from exc
-            return ordered
+                    raise RuntimeError(
+                        "IQ-TREE output does not contain enough sequences"
+                    ) from exc
+            return ordered, command_str
 
     def _simulate_with_seqgen(
         self,
@@ -871,18 +1194,24 @@ class TreeSequenceGenerator:
         seed = config.get("seed")
         additional_args = config.get("additional_args", [])
         if isinstance(additional_args, (str, bytes)):
-            raise ValueError("Seq-Gen additional_args must be an iterable of arguments, not a string.")
+            raise ValueError(
+                "Seq-Gen additional_args must be an iterable of arguments, not a string."
+            )
         additional_args_list = [str(arg) for arg in additional_args]
 
         if replicates != 1:
-            raise ValueError("Seq-Gen simulation currently supports replicates=1 when streaming output.")
+            raise ValueError(
+                "Seq-Gen simulation currently supports replicates=1 when streaming output."
+            )
 
         if isinstance(frequencies, str):
             freq_arg = frequencies
         else:
             freq_values = tuple(frequencies)
             if len(freq_values) != 4:
-                raise ValueError("Seq-Gen frequencies must contain exactly four values.")
+                raise ValueError(
+                    "Seq-Gen frequencies must contain exactly four values."
+                )
             freq_arg = ",".join(str(value) for value in freq_values)
 
         command = [
@@ -943,7 +1272,9 @@ class TreeSequenceGenerator:
             records = list(SeqIO.parse(StringIO(fasta_output), "fasta"))
             taxa = self.config.tree.taxa_labels
             if len(records) < len(taxa):
-                raise RuntimeError("Seq-Gen output does not contain the expected sequences.")
+                raise RuntimeError(
+                    "Seq-Gen output does not contain the expected sequences."
+                )
 
             seq_map = {record.id.split()[0]: str(record.seq) for record in records}
             ordered: dict[str, str] = {}
@@ -955,17 +1286,110 @@ class TreeSequenceGenerator:
                 try:
                     ordered[taxon] = str(next(fallback_iter).seq)
                 except StopIteration as exc:  # pragma: no cover - defensive guard
-                    raise RuntimeError("Seq-Gen output does not contain enough sequences.") from exc
+                    raise RuntimeError(
+                        "Seq-Gen output does not contain enough sequences."
+                    ) from exc
+            self._last_sequence_command = " ".join(command_with_tree)
             return ordered
+
+    @staticmethod
+    def _parse_iqtree_log_metadata(log_text: str) -> dict[str, str]:
+        metadata: dict[str, str] = {}
+
+        model_match = re.search(r"^\s*-\s*Model:\s*(.+)$", log_text, re.MULTILINE)
+        if model_match:
+            metadata["model"] = model_match.group(1).strip()
+
+        seed_match = re.search(r"^Seed:\s+(\d+)\b", log_text, re.MULTILINE)
+        if seed_match:
+            metadata["seed"] = seed_match.group(1)
+
+        state_frequencies = TreeSequenceGenerator._parse_iqtree_state_frequencies(
+            log_text
+        )
+        if state_frequencies:
+            metadata["state_frequencies"] = (
+                TreeSequenceGenerator._serialize_debug_value(state_frequencies)
+            )
+
+        rate_matrix = TreeSequenceGenerator._parse_iqtree_rate_matrix(log_text)
+        if rate_matrix:
+            metadata["rate_matrix"] = TreeSequenceGenerator._serialize_debug_value(
+                rate_matrix
+            )
+
+        return metadata
+
+    @staticmethod
+    def _parse_iqtree_state_frequencies(log_text: str) -> dict[str, float]:
+        lines = log_text.splitlines()
+        in_block = False
+        frequencies: dict[str, float] = {}
+        for line in lines:
+            if line.strip().startswith("State frequencies:"):
+                in_block = True
+                continue
+            if in_block and line.strip().startswith("Rate matrix Q:"):
+                break
+            if not in_block:
+                continue
+            match = re.match(
+                r"^\s*pi\(([A-Za-z])\)\s*=\s*([+-]?\d+(?:\.\d+)?)\s*$", line
+            )
+            if match:
+                frequencies[match.group(1)] = float(match.group(2))
+        return frequencies
+
+    @staticmethod
+    def _parse_iqtree_rate_matrix(log_text: str) -> dict[str, dict[str, float]]:
+        lines = log_text.splitlines()
+        in_block = False
+        row_labels = ["A", "C", "G", "T"]
+        matrix: dict[str, dict[str, float]] = {}
+
+        for line in lines:
+            if line.strip().startswith("Rate matrix Q:"):
+                in_block = True
+                continue
+            if not in_block:
+                continue
+
+            if line.strip().startswith("Model of rate heterogeneity:"):
+                break
+
+            match = re.match(r"^\s*([ACGT])\s+(.+?)\s*$", line)
+            if not match:
+                continue
+
+            row_label = match.group(1)
+            values = re.findall(r"[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", match.group(2))
+            if len(values) != 4:
+                continue
+            matrix[row_label] = {
+                col_label: float(values[index])
+                for index, col_label in enumerate(row_labels)
+            }
+
+        return matrix
 
 
 __all__ = ["TreeSequenceGenerator", "TreeSequenceResult"]
 
 
 def _generate_phylogeny_worker(
-    payload: tuple[GenerationConfig, int, TopologySpec, str]
+    payload: tuple[GenerationConfig, int, TopologySpec, str],
 ) -> tuple[Phylogeny, bool]:
     config, seed, topology, distribution = payload
     seeded_config = config.with_seed(seed)
     generator = TreeSequenceGenerator(seeded_config)
     return generator.generate_phylogeny(topology=topology, distribution=distribution)
+
+
+def _jsonify(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _jsonify(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_jsonify(item) for item in value]
+    if isinstance(value, list):
+        return [_jsonify(item) for item in value]
+    return value
